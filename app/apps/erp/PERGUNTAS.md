@@ -3514,3 +3514,34 @@ não há orçamento de material por obra no ERP.
   assinados pelo portal? *(documento PAPEL "carta anexada pela obra" × assinado
   na tela)*
 
+
+## Financeiro no portal e os subtipos de pagamento (27/11/2026)
+
+Os subtipos, as formas e os campos de cada um estão em `PLEITOS_FINANCEIRO.md`
+(gerado de `core/titulos/pleitos.py`). O subtipo não fica gravado à parte: ele
+se lê pelo **tipo interno** do título (T1 nota de material, T2 nota de
+serviço, T3 frete, T6 pessoa física, T8 guia, T9 conta de consumo, T14 sem
+nota…), que é 1 para 1.
+
+- Quantos pedidos de pagamento a obra X abriu este mês, e de que tipo? *("este
+  mês" = mês do pedido, `criado_em`, não o vencimento)* — **muda conforme quem
+  pergunta**: quem é da obra vê só o que ele mesmo pediu.
+- Quanto em despesa **sem nota** (exceção) cada obra lançou no mês, e com que
+  justificativa? *(tipo T14; é o que custa até 34% a mais em imposto)*
+- Quais pedidos estão **parados** e por quê? *(status BLOQUEADO + a crítica
+  que bloqueou na última análise; o mais comum é conta do credor sem
+  homologar)*
+- Quais pedidos a obra **cancelou**, quem cancelou e com que motivo?
+- Quais pagamentos por **boleto** chegaram sem o boleto anexado? *(antes de
+  27/11/2026 a tela não exigia; depois, o envio recusa)*
+- Quantas contas de credor foram **informadas pela obra** e esperam
+  homologação? *(contas PENDENTE criadas pelo lançamento ou pelo portal)*
+- Quantas prestações de fundo fixo de **adiantamento** e quantas de
+  **reembolso** cada pessoa fez no trimestre, e de quanto?
+- Que medições a obra registrou e ainda **esperam a autorização**? *(medição
+  com status MEDIDA)* — e há quanto tempo?
+- Que contratos de empreita a obra cadastrou e ainda **esperam o aval**?
+- Quantos pedidos de pagamento entraram pelo **portal** e quantos pela tela do
+  ERP? *(campo `origem` do título: "PORTAL" para o portal, desde 27/11/2026;
+  a prestação de fundo fixo, o contrato e a medição do portal usam as rotas do
+  ERP e **não** marcam a porta)*

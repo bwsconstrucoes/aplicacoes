@@ -179,8 +179,8 @@ async function abrir(id){
 
       ${c.status==="VIGENTE"?`<h4>Nova medição</h4>
       <div class="form-grade">
-        <div class="campo"><label>Período de</label><input type="date" id="md-ini"></div>
-        <div class="campo"><label>até</label><input type="date" id="md-fim"></div>
+        <div class="campo"><label>Período de *</label><input type="date" id="md-ini"></div>
+        <div class="campo"><label>até *</label><input type="date" id="md-fim"></div>
       </div>
       ${(c.itens_orcamento||[]).length?`
         <div class="cartao-dica">Informe quanto avançou de cada serviço no período.</div>
@@ -348,12 +348,12 @@ els("btn-novo").addEventListener("click", () => {
         ${FORN.map(f=>`<option value="${f.id}">${f.nome}</option>`).join("")}</select></div>
       <div class="campo" style="grid-column:span 3"><label>Serviço contratado *</label>
         <input id="n-objeto" placeholder="ex.: alvenaria de vedação do bloco A"></div>
-      <div class="campo"><label>Como será pago</label><select id="n-modo">
+      <div class="campo"><label>Como será pago *</label><select id="n-modo">
         <option value="MEDICAO">Por medição (quantidade × preço)</option>
         <option value="PARCELAS">Serviço fechado, em parcelas</option></select></div>
-      <div class="campo"><label>Valor total</label><input id="n-total" disabled placeholder="soma dos serviços"></div>
-      <div class="campo"><label>Parcelas previstas</label><input id="n-parc" placeholder="3"></div>
-      <div class="campo"><label>Início</label><input type="date" id="n-ini"></div>
+      <div class="campo"><label id="rot-n-total">Valor total</label><input id="n-total" disabled placeholder="soma dos serviços"></div>
+      <div class="campo" id="campo-n-parc"><label>Parcelas previstas *</label><input id="n-parc" placeholder="3"></div>
+      <div class="campo"><label>Início *</label><input type="date" id="n-ini"></div>
       <div class="campo"><label>Término</label><input type="date" id="n-fim"></div>
       <div class="campo"><label>Exigir foto na medição</label><select id="n-foto">
         <option value="1" selected>Sim</option><option value="0">Não</option></select></div>
@@ -362,16 +362,31 @@ els("btn-novo").addEventListener("click", () => {
         <div class="dica">Parte de cada medição que fica guardada até o fim do
           serviço. O usual é 5%. Vazio ou zero não retém nada.</div></div>
     </div>
-    <h4>Serviços contratados</h4>
+    <div id="bloco-n-itens">
+    <h4>Serviços contratados *</h4>
     <div id="n-itens"></div>
     <button class="btn secundario" type="button" id="n-add">+ Serviço</button>
     <div class="cartao-dica" style="margin-top:6px">Como um orçamento: cada serviço com
-      unidade, quantidade e preço. A medição depois é feita por serviço.</div>
+      unidade, quantidade e preço. A medição depois é feita por serviço.</div></div>
     <div class="cartao-dica">O contrato nasce aguardando aval. Depois de aprovado, a obra
       mede e o supervisor autoriza — só então nasce o título a pagar.</div>
     <div style="margin-top:14px"><button class="btn" id="n-salvar">Cadastrar contrato</button></div>`;
   let ITS = [{}];
+  // ⚑ O MODO MANDA NOS CAMPOS (27/11/2026) — a mesma regra do portal
+  // (`core/titulos/pleitos.py`): por medição, a planilha de serviços é
+  // obrigatória e o valor é a soma dela; em parcelas, a planilha sai e o valor
+  // total e as parcelas passam a ser digitados.
+  const porMedicao = () => els("n-modo").value === "MEDICAO";
+  function aplicarModo(){
+    const med = porMedicao();
+    els("bloco-n-itens").classList.toggle("oculto", !med);
+    els("campo-n-parc").classList.toggle("oculto", med);
+    els("n-total").disabled = med;
+    els("rot-n-total").textContent = med ? "Valor total (soma dos serviços)" : "Valor total *";
+    if (med) calc(); else els("n-total").value = "";
+  }
   const calc = () => {
+    if (!porMedicao()) return;
     const v = ITS.reduce((a,i)=>a + dec(i.quantidade)*dec(i.preco_unitario), 0);
     els("n-total").value = v.toFixed(2).replace(".",",");
   };
@@ -395,14 +410,17 @@ els("btn-novo").addEventListener("click", () => {
   function desenharTotais(){ /* o total já é recalculado em calc() */ }
   els("n-add").addEventListener("click", ()=>{ ITS.push({}); desenharItens(); });
   desenharItens();
+  els("n-modo").addEventListener("change", aplicarModo);
+  aplicarModo();
   els("n-salvar").addEventListener("click", async () => {
     try {
       const d = await api("/erp/api/empreitas", {method:"POST",
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({obra_id:+els("n-obra").value, fornecedor_id:+els("n-forn").value,
           objeto: els("n-objeto").value, modo: els("n-modo").value,
-          itens: ITS.filter(i=>i.descricao && dec(i.quantidade)>0 && dec(i.preco_unitario)>0),
-          valor_total: els("n-total").value,
+          itens: porMedicao() ? ITS.filter(i=>i.descricao || i.unidade || i.quantidade || i.preco_unitario)
+            .map(i=>({...i, quantidade: String(dec(i.quantidade)), preco_unitario: String(dec(i.preco_unitario))})) : [],
+          valor_total: porMedicao() ? null : String(dec(els("n-total").value)),
           parcelas_previstas: els("n-parc").value, data_inicio: els("n-ini").value || null,
           data_fim: els("n-fim").value || null, exige_foto: els("n-foto").value === "1",
           retencao_garantia_pct: (els("n-garantia").value || "0").replace(",", ".")})});

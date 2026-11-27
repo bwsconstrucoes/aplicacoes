@@ -40,6 +40,22 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚑ 27/11/2026 — (chat do Financeiro) O PORTAL GANHOU A ÁREA FINANCEIRO; `_gravar_lancamento` (registro entre áreas)
+
+- `core/portal.py` (`AREAS`): "Pagamentos" virou **"Financeiro"**, área-tela
+  (`/erp/portal/financeiro`), aberta só para quem `portal_financeiro.liberado()`
+  deixa — hoje só o ADMIN; para os outros aparece fechada como antes. Manual do
+  portal atualizado (a parte 5).
+- `routes.py`: o corpo de `api_criar_titulo` virou `_gravar_lancamento`, usado
+  pela tela Lançar E pelo portal. Ele confere os campos pelo catálogo
+  (`core/titulos/pleitos.py`) e, para quem é da obra, a obra do rateio contra o
+  alcance. As rotas de prestação, empreitas (POST) e medição também conferem
+  pelo catálogo — **o período da medição passou a ser obrigatório** no ERP.
+- `core/titulos/empreita.listar`: quem é da obra vê só os contratos das obras
+  dele (via `obras_de_registro_sem_autor`).
+- `core/documentos/armazenamento.CATEGORIAS`: + FATURA e RECIBO.
+Detalhe em `HISTORICO_FINANCEIRO.md`, 27/11/2026.
+
 ### 26/11/2026 — (chat do DP) O modal-ponte da pessoa atravessa o ERP inteiro
 
 `abrirPessoa` em `erp_base.html`, ação nova `abrir_pessoa` (permissoes.py,

@@ -34,6 +34,7 @@
     </div>
   </div>
   <div id="lista-docs"></div>
+  <div id="docs-exigidos" class="cartao-dica"></div>
   <div id="leitura"></div>
 </div>
 
@@ -42,6 +43,17 @@
   <div class="aviso alerta oculto" id="aviso-credor" style="margin-bottom:12px"></div>
   <div class="cartao">
     <div class="cartao-cab"><h3>2 · Credor e classificação</h3></div>
+    {# ⚑ O QUE ESTÁ SENDO PAGO (27/11/2026) — o mesmo catálogo do portal
+       (`core/titulos/pleitos.py`). Ele decide as formas de pagamento que
+       aparecem, o nome e a obrigatoriedade do número e da data do documento,
+       os campos próprios (referência, justificativa, chave de acesso), as
+       contas do plano que servem e os documentos que têm de vir junto. O dono:
+       "essa lógica e condições dos campos nunca foi revisada no ERP". #}
+    <div class="form-grade" style="margin-bottom:12px">
+      <div class="campo" style="grid-column:span 2"><label for="f-subtipo">O que está sendo pago *</label>
+        <select id="f-subtipo"><option value="">— escolher —</option></select>
+        <div class="dica" id="dica-subtipo"></div></div>
+    </div>
     <div class="form-grade">
       {# CADASTRAR O CREDOR SEM SAIR DAQUI (22/09/2026): *"se o credor não tem
          cadastro, o ERP deve avisar e tem que ser permitido o cadastro já a
@@ -81,7 +93,7 @@
          crítica de duplicidade do fundo fixo compara "mesma conta no mesmo
          mês" por ela, e a NFS-e leva a competência dentro. O que mudou é que
          o sistema deduz: emissão do documento, ou o primeiro vencimento. #}
-      <div class="campo"><label for="f-emissao">Emissão do documento</label>
+      <div class="campo" id="campo-emissao"><label for="f-emissao" id="rot-emissao">Emissão do documento</label>
         <input type="date" id="f-emissao">
         <div class="dica">É daqui que sai o mês de competência. Em branco, vale
           o primeiro vencimento.</div></div>
@@ -98,8 +110,18 @@
           igual na ficha do título.</div></div>
       <div class="campo"><label for="f-valor">Valor bruto *</label>
         <input id="f-valor" inputmode="decimal" placeholder="0,00"></div>
-      <div class="campo"><label for="f-doc-numero">Nº do documento</label>
+      <div class="campo" id="campo-doc-numero"><label for="f-doc-numero" id="rot-doc-numero">Nº do documento</label>
         <input id="f-doc-numero" placeholder="nº da nota/recibo"></div>
+    </div>
+    <div class="form-grade" style="margin-top:12px">
+      <div class="campo oculto" id="campo-chave" style="grid-column:span 2"><label for="f-chave">Chave de acesso (44 dígitos)</label>
+        <input id="f-chave" inputmode="numeric">
+        <div class="dica">Vem sozinha quando a nota é lida.</div></div>
+      <div class="campo oculto" id="campo-referencia"><label for="f-referencia" id="rot-referencia">Mês de referência *</label>
+        <input type="month" id="f-referencia"></div>
+      <div class="campo oculto" id="campo-justificativa" style="grid-column:span 2"><label for="f-justificativa">Por que não há nota *</label>
+        <textarea id="f-justificativa" rows="2"></textarea>
+        <div class="dica">Despesa sem nota custa até 34% a mais em imposto.</div></div>
     </div>
   </div>
 
@@ -179,6 +201,7 @@
 {% block scripts %}
 <script>
 let D = {fornecedores: [], obras: [], categorias: []}, LIDO = null;
+let PL = null;          // o catálogo dos pleitos (core/titulos/pleitos.py)
 let RET = [], PARC = [{}], RAT = [{}];
 
 // ⚑ LANÇAR A PARTIR DO RECEBIMENTO DE UM PEDIDO DE COMPRA (20/11/2026).
@@ -237,6 +260,8 @@ async function preencherDoPedido(escolhido){
     const d = await api(`/erp/api/suprimentos/pedidos/${id}/para-lancar`
       + (rec && /^\d+$/.test(rec) ? `?recebimento=${rec}` : ""));
     const p = DO_PEDIDO = d.pedido;
+    // A conta de um pedido de compra é nota de material, quase sempre.
+    if (!els("f-subtipo").value) { els("f-subtipo").value = "NOTA_MATERIAL"; aplicarSubtipo(); }
     const br = v => String(v || "").replace(".", ",");
     // Vínculo feito DEPOIS de a nota ter sido lida (o botão "é deste
     // pedido?"): o que a nota já preencheu fica — valor, número, parcelas do
@@ -351,6 +376,10 @@ async function carregar(){
       Object.keys(porGrupo).map(g => `<optgroup label="${g}">` +
         porGrupo[g].map(c=>`<option value="${c.id}">${c.codigo} · ${c.descricao}</option>`).join("") +
         `</optgroup>`).join("");
+    PL = D.pleitos;
+    els("f-subtipo").innerHTML = `<option value="">— escolher —</option>` +
+      PL.pagamento.map(x => `<option value="${x.chave}">${escapar(x.rotulo)}</option>`).join("");
+    aplicarSubtipo();
     desenharLinhas();
     comBusca("f-credor", "buscar credor por nome ou CNPJ…");
     comBusca("f-categoria", "buscar categoria de despesa…");
@@ -368,7 +397,70 @@ async function carregar(){
 // Em BOLETO a linha é OBRIGATÓRIA (o sistema confere os dígitos e compara o
 // valor); em GUIA ela é opcional, porque DARF e GPS nem sempre trazem uma.
 function comBoleto(){
-  return ["BOLETO", "GUIA"].includes(els("f-forma").value);
+  const f = PL && PL.formas[els("f-forma").value];
+  return f ? !!f.usa_linha : ["BOLETO", "GUIA"].includes(els("f-forma").value);
+}
+const linhaObrigatoria = () => {
+  const f = PL && PL.formas[els("f-forma").value];
+  return f ? !!f.linha_obrigatoria : els("f-forma").value === "BOLETO";
+};
+
+// ---------------------------------------------------------------------------
+// O SUBTIPO MANDA NOS CAMPOS (27/11/2026) — a mesma regra do portal e do
+// servidor. Nada aqui decide: tudo vem de PL, que vem do catálogo.
+// ---------------------------------------------------------------------------
+const subtipoAtual = () => PL && PL.pagamento.find(x => x.chave === els("f-subtipo").value);
+function casaCond(cond, dados){
+  if (!cond) return true;
+  return Object.entries(cond).every(([k, vs]) => vs.map(String).includes(String(dados[k] ?? "")));
+}
+function aplicarSubtipo(){
+  if (!PL) return;
+  const st = subtipoAtual();
+  els("dica-subtipo").textContent = st ? st.explicacao : "";
+  // formas: só as que servem a este subtipo
+  const forma = els("f-forma"), atual = forma.value;
+  const formas = st ? st.formas : ["BOLETO", "PIX", "TED", "GUIA", "DEBITO_AUTOMATICO"];
+  forma.innerHTML = formas.map(f => `<option value="${f}">${escapar(PL.formas[f].rotulo)}</option>`).join("");
+  forma.value = formas.includes(atual) ? atual : formas[0];
+  // número e data do documento
+  const campo = n => st ? st.campos.find(c => c.nome === n) : null;
+  const num = campo("documento_numero"), emi = campo("data_emissao_doc");
+  els("campo-doc-numero").classList.toggle("oculto", !!st && !num);
+  els("rot-doc-numero").textContent = (num ? num.rotulo : "Nº do documento") + (num && num.obrigatorio ? " *" : "");
+  els("campo-emissao").classList.toggle("oculto", !!st && !emi);
+  els("rot-emissao").textContent = (emi ? emi.rotulo : "Emissão do documento") + (emi && emi.obrigatorio ? " *" : "");
+  els("campo-chave").classList.toggle("oculto", !campo("chave_acesso"));
+  const ref = campo("mes_referencia");
+  els("campo-referencia").classList.toggle("oculto", !ref);
+  if (ref) els("rot-referencia").textContent = ref.rotulo + (ref.obrigatorio ? " *" : "");
+  els("campo-justificativa").classList.toggle("oculto", !campo("justificativa_excecao"));
+  // contas do plano: só as que aceitam o tipo deste subtipo
+  const sel = els("f-categoria"), escolhida = sel.value;
+  const servem = D.categorias.filter(c => !st || !c.tipos.length || c.tipos.includes(st.tipo));
+  const porGrupo = {};
+  servem.forEach(c => (porGrupo[c.grupo] = porGrupo[c.grupo] || []).push(c));
+  sel.innerHTML = `<option value="">— escolher —</option>` +
+    Object.keys(porGrupo).map(g => `<optgroup label="${g}">` +
+      porGrupo[g].map(c => `<option value="${c.id}">${c.codigo} · ${c.descricao}</option>`).join("") +
+      `</optgroup>`).join("");
+  if (servem.some(c => String(c.id) === escolhida)) sel.value = escolhida;
+  comBusca("f-categoria", "buscar categoria de despesa…");
+  atualizarCredor();
+  desenharLinhas();
+  desenharExigidos();
+}
+function desenharExigidos(){
+  const alvo = els("docs-exigidos"), st = subtipoAtual();
+  if (!alvo) return;
+  if (!st || !st.documentos.length) { alvo.innerHTML = ""; return; }
+  const dados = {forma_pagamento: els("f-forma").value};
+  alvo.innerHTML = "<b>Documentos deste pedido:</b> " + st.documentos.map(x => {
+    const exige = Object.keys(x.obrigatorio_se || {}).length ? casaCond(x.obrigatorio_se, dados) : x.obrigatorio;
+    const tem = DOCS.some(d => x.categorias.includes(d.categoria));
+    if (!exige && !tem) return `${escapar(x.rotulo)} (opcional)`;
+    return `<span style="color:var(--${tem ? "verde" : "vermelho"})">${tem ? "✓" : "✕"} ${escapar(x.rotulo)}</span>`;
+  }).join(" · ") + ` <small>— marque em cada arquivo o que ele é.</small>`;
 }
 
 function desenharLinhas(){
@@ -388,7 +480,7 @@ function desenharLinhas(){
         <input type="date" data-p="vencimento" data-i="${i}" value="${p.vencimento||""}"></div>
       <div class="campo"><label>Valor</label><input data-p="valor" data-i="${i}" value="${p.valor||""}"></div>
       ${comBoleto() ? `<div class="campo" style="grid-column:span 2">
-        <label>Linha digitável${els("f-forma").value === "BOLETO" ? " *" : ""}</label>
+        <label>Linha digitável${linhaObrigatoria() ? " *" : ""}</label>
         <input data-p="linha_digitavel" data-i="${i}" value="${p.linha_digitavel||""}"
                placeholder="os 47 dígitos do código de barras"></div>` : ""}
       <div class="campo" style="align-self:end">${PARC.length>1?`<button class="btn secundario" data-del-p="${i}">Remover</button>`:""}</div>
@@ -465,6 +557,7 @@ let DOCS = [];              // {arquivo, lido, categoria}
 
 function categoriaDoDoc(x){
   const tipo = ((x && x.tipo_documento) || "").toUpperCase();
+  if (PL && PL.categoria_pelo_documento[tipo]) return PL.categoria_pelo_documento[tipo];
   if (tipo.includes("BOLETO")) return "BOLETO";
   if (tipo.includes("GUIA") || tipo.includes("DARF") || tipo.includes("GPS")) return "GUIA";
   if (tipo.includes("NF") || tipo.includes("NOTA")) return "NOTA";
@@ -475,15 +568,16 @@ function categoriaDoDoc(x){
 
 function desenharDocumentos(){
   const alvo = els("lista-docs");
-  if (!DOCS.length) { alvo.innerHTML = ""; return; }
+  if (!DOCS.length) { alvo.innerHTML = ""; desenharExigidos(); return; }
   alvo.innerHTML = `<div class="cartao" style="box-shadow:none; border:1px solid var(--borda); padding:0; margin-top:10px">
     <table><tbody>${DOCS.map((d, i) => `
       <tr>
         <td>${escapar(d.arquivo.name)}
           <small>${Math.round(d.arquivo.size / 1024)} KB</small></td>
-        <td style="width:150px">${d.lido
-          ? `<span class="selo aprovado">lido</span>`
-          : `<span class="selo outro">só arquiva</span>`}</td>
+        <td style="width:190px"><select data-cat-doc="${i}" title="o que é este arquivo">${
+          Object.entries((PL && PL.documentos) || {OUTRO: "Outro documento"}).map(([k, v]) =>
+            `<option value="${k}" ${d.categoria === k ? "selected" : ""}>${escapar(v)}</option>`).join("")}</select>
+          ${d.lido ? `<span class="selo aprovado">lido</span>` : ""}</td>
         <td style="width:210px; white-space:nowrap">
           ${d.lido ? "" : `<button class="btn secundario" data-ler-doc="${i}">Ler este</button>`}
           <button class="btn secundario" data-tira-doc="${i}">Remover</button></td>
@@ -493,6 +587,9 @@ function desenharDocumentos(){
       valor e linha digitável); um comprovante, normalmente não.</div></div>`;
   document.querySelectorAll("[data-ler-doc]").forEach(b =>
     b.addEventListener("click", () => lerDocumento(+b.dataset.lerDoc)));
+  document.querySelectorAll("[data-cat-doc]").forEach(x =>
+    x.addEventListener("change", () => { DOCS[+x.dataset.catDoc].categoria = x.value; desenharExigidos(); }));
+  desenharExigidos();
   document.querySelectorAll("[data-tira-doc]").forEach(b =>
     b.addEventListener("click", () => { DOCS.splice(+b.dataset.tiraDoc, 1); desenharDocumentos(); }));
 }
@@ -522,6 +619,16 @@ async function lerDocumento(indice){
     LIDO = LIDO || d.documento;      // o primeiro lido é quem manda no cabeçalho
     DOCS[i].lido = true;
     DOCS[i].categoria = categoriaDoDoc(d.documento);
+    const sug = PL && PL.subtipo_pelo_documento[(d.documento.tipo_documento || "").toUpperCase()];
+    if (sug && !els("f-subtipo").value && PL.pagamento.some(x => x.chave === sug)) {
+      els("f-subtipo").value = sug; aplicarSubtipo();
+    }
+    const tipoLido = (d.documento.tipo_documento || "").toUpperCase();
+    if (["BOLETO", "GUIA"].includes(tipoLido) && [...els("f-forma").options].some(o => o.value === tipoLido)) {
+      els("f-forma").value = tipoLido; atualizarCredor();
+    }
+    if (d.documento.chave_acesso && !els("f-chave").value) els("f-chave").value = d.documento.chave_acesso;
+    if (d.documento.competencia && !els("f-referencia").value) els("f-referencia").value = String(d.documento.competencia).slice(0, 7);
     aplicarLeitura(d.documento, primeira);
   } catch(e){ aviso("mensagem", e.message + " Você pode preencher manualmente.", "erro");
     els("form-bloco").classList.remove("oculto"); }
@@ -784,7 +891,9 @@ els("f-credor").addEventListener("change", atualizarCredor);
 els("f-forma").addEventListener("change", () => {
   atualizarCredor();
   desenharLinhas();       // o campo da linha digitável entra ou sai com a forma
+  desenharExigidos();     // o boleto passa a ser exigido, ou deixa de ser
 });
+els("f-subtipo").addEventListener("change", aplicarSubtipo);
 els("f-categoria").addEventListener("change", () => {
   const c = D.categorias.find(x => String(x.id) === els("f-categoria").value);
   els("dica-categoria").innerHTML = c ? (c.uso || `${c.grupo} › ${c.subgrupo}`) +
@@ -891,7 +1000,13 @@ function montar(){
     emitente_documento: (LIDO && !els("f-credor").value) ? LIDO.emitente_documento : null,
     emitente_nome: (LIDO && !els("f-credor").value) ? LIDO.emitente_nome : null,
     municipio_emissao: LIDO ? LIDO.municipio_emissao : null,
-    chave_acesso: LIDO ? LIDO.chave_acesso : null,
+    subtipo: els("f-subtipo").value || null,
+    chave_acesso: els("campo-chave").classList.contains("oculto") ? null
+      : (els("f-chave").value.trim() || (LIDO ? LIDO.chave_acesso : null)),
+    mes_referencia: els("campo-referencia").classList.contains("oculto") ? null : els("f-referencia").value,
+    justificativa_excecao: els("campo-justificativa").classList.contains("oculto") ? null
+      : els("f-justificativa").value.trim(),
+    documentos_anexos: DOCS.map(x => x.categoria || "OUTRO"),
     cno_documento: LIDO ? (LIDO.cno || null) : null,
     categoria_id: els("f-categoria").value ? +els("f-categoria").value : null,
     descricao: els("f-descricao").value.trim(),
@@ -962,6 +1077,10 @@ els("btn-checar").addEventListener("click", async () => {
 });
 
 els("btn-enviar").addEventListener("click", async () => {
+  if (!els("f-subtipo").value) {
+    aviso("mensagem", "Escolha <b>o que está sendo pago</b> — é ele que diz quais campos e documentos o pedido precisa.", "erro");
+    els("f-subtipo").focus(); return;
+  }
   const b = els("btn-enviar"); b.disabled = true; b.textContent = "Enviando…";
   try {
     const d = await api("/erp/api/lancamento", {method:"POST",
@@ -998,7 +1117,8 @@ els("btn-enviar").addEventListener("click", async () => {
       falhas.length ? "info" : (t.status === "BLOQUEADO" ? "info" : "ok"));
     DO_PEDIDO = null; els("faixa-pedido").innerHTML = ""; MOTIVO_SEM_PEDIDO = null; NAO_E_DE_PEDIDO = false;
     RET = []; PARC = [{}]; RAT = [{}]; LIDO = null; DOCS = [];
-    ["f-descricao","f-valor","f-doc-numero","f-emissao"].forEach(i=>els(i).value="");
+    ["f-descricao","f-valor","f-doc-numero","f-emissao","f-chave","f-referencia",
+     "f-justificativa"].forEach(i=>els(i).value="");
     els("leitura").innerHTML = ""; els("bloco-critica").innerHTML = "";
     desenharDocumentos();
     desenharLinhas();
