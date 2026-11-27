@@ -177,9 +177,12 @@ atendida ou antiga não mostrava nada.
 - Horas na tela no horário de Fortaleza (`quandoBR`, erp_base) — antes o
   diário mostrava UTC, 3 h adiantado.
 
-**Pendente com ele:** tirar de "Contabilidade e agente" as abas "Todos os
-e-mails" e "A devolver pela obra" e o botão "+ Pedido" (proposto, esperando o
-"pode").
+**Tirados no mesmo dia, com o "pode tirar e publicar" dele:** as abas "Todos
+os e-mails à contabilidade" e "A devolver pela obra" e o botão "+ Pedido" de
+"Contabilidade e agente". Ficaram Diário, rotinas, caixa e sugestões. O que se
+perdeu, e ele sabia: o e-mail avulso antigo (feito pelo "+ Pedido", sem
+solicitação) não tem mais lista própria — continua no banco e no caixa. As
+rotas da API continuam (a criação de pedido ainda é usada pelo processo).
 
 ### 26/11/2026 (12) — O agente lê a caixa de hora em hora, nos dias úteis, fora das batidas do ponto
 
