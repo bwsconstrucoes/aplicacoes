@@ -237,7 +237,15 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
         "erp.api_portal_ler_documentos",
         "erp.api_portal_conferir_cpf",
         "erp.pagina_primeiro_acesso_portal",
-        "erp.api_primeiro_acesso_codigo", "erp.api_primeiro_acesso_concluir"}
+        "erp.api_primeiro_acesso_codigo", "erp.api_primeiro_acesso_concluir",
+        # 27/11/2026: a ASSINATURA DO CONTRATO DE EMPREITA por quem é de fora.
+        # O empreiteiro não tem login nem deve ter. O que protege: o TOKEN do
+        # link (24 bytes sorteados, guardado só como resumo, trocado a cada
+        # reenvio), o código de 6 dígitos no telefone/e-mail do cadastro (15
+        # minutos, cinco tentativas, cinco códigos por hora), o CPF/CNPJ
+        # conferido e o teto por IP. Link inválido e vencido respondem igual.
+        "erp.pagina_assinar_contrato", "erp.api_assinar_dados",
+        "erp.api_assinar_codigo", "erp.api_assinar", "erp.api_assinar_pdf"}
 
 
 def test_o_manual_do_portal_exige_login(app):

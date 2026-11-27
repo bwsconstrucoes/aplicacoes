@@ -130,12 +130,14 @@
   <div id="recado"></div>
   <div class="abas">
     <button class="aba ativa" data-aba="pedir"><span>＋</span>Pedir</button>
+    <button class="aba" data-aba="contratos"><span id="n-contratos">–</span>Contratos</button>
     <button class="aba" data-aba="meus"><span id="n-meus">–</span>O que pedi</button>
   </div>
   <div id="conteudo"><div class="vazio">carregando…</div></div>
 </div>
 
 <dialog id="dlg"><div class="dentro" id="dlg-dentro"></div></dialog>
+{% include "_contrato_gerado.html" %}
 
 <script>
 let C = null, OBRAS = [], CATS = [], CONTRATOS = [], LANC = [], MEU = {};
@@ -195,7 +197,10 @@ async function carregar(){
     const d = await api("/erp/portal/api/financeiro/inicio");
     C = d.catalogo; OBRAS = d.obras; CATS = d.categorias; CONTRATOS = d.contratos;
     LANC = d.lancamentos; MEU = d.meu_cadastro;
+    try { await ContratoGerado.carregar(); } catch(_) {}
+    K.cg = ContratoGerado.novo();
     el("n-meus").textContent = LANC.length;
+    carregarContratos();
     desenhar();
   } catch(e){ recado(esc(e.message), "erro"); }
 }
@@ -213,6 +218,7 @@ document.querySelectorAll(".aba").forEach(b => b.addEventListener("click", () =>
 function desenhar(){
   if (!C) return;
   if (ABA === "meus") return desenharMeus();
+  if (ABA === "contratos") return desenharContratos();
   const op = [
     ["pagamento", "Pedir pagamento", "nota, boleto, guia, conta de consumo, recibo"],
     ["fundo", "Fundo fixo", "reembolso ou prestação de adiantamento"],
@@ -679,7 +685,10 @@ async function enviarFundo(){
 // ---------------------------------------------------------------------------
 // 3. MEDIR EMPREITA
 // ---------------------------------------------------------------------------
-let M = {qtd: {}, fotos: []};
+// ⚑ FOTO E OBSERVAÇÃO POR SERVIÇO (27/11/2026). Ele: "são fotos dos serviços,
+// para poder demonstrar que aquele serviço está sendo executado." Cada serviço
+// medido leva as fotos dele; a observação geral continua para o conjunto.
+let M = {qtd: {}, obs: {}, fotosItem: {}, fotos: []};
 function formMedicao(){
   if (!CONTRATOS.length) {
     el("form").innerHTML = `<div class="bloco"><div class="vazio">Nenhum contrato de empreita
@@ -697,7 +706,11 @@ function formMedicao(){
       <div class="duas"><label class="campo">Executado neste período (${esc(it.unidade || "un")})
         <input inputmode="decimal" data-mq="${it.id}" value="${esc(M.qtd[it.id] || "")}"
           style="${q > it.saldo + 0.0001 ? "border-color:#A32020" : ""}"></label>
-        <div class="total" style="align-self:end">${moeda(q * it.preco_unitario)}</div></div></div>`;
+        <div class="total" style="align-self:end">${moeda(q * it.preco_unitario)}</div></div>
+      ${q > 0 ? `<label class="campo">Observação deste serviço<input data-mobs="${it.id}" value="${esc(M.obs[it.id] || "")}" placeholder="opcional"></label>
+      <label class="campo">Fotos deste serviço${k.exige_foto ? ' <span class="ob">*</span>' : ""}
+        <input type="file" data-mfoto="${it.id}" multiple accept="image/*">
+        <div class="dica">${(M.fotosItem[it.id] || []).length ? `<b>${M.fotosItem[it.id].length} foto(s)</b>` : "tire a foto do que foi feito"}</div></label>` : ""}</div>`;
   }).join("") : "";
   el("form").innerHTML = `<div class="bloco"><h3>Medir empreita</h3>
     <div class="sub">A medição ainda não é pagamento: quem tem alçada confere e autoriza.</div>
@@ -716,12 +729,12 @@ function formMedicao(){
         <input id="md-valor" inputmode="decimal" value="${esc(M.valor_medido || "")}"></label>` : ""}
       <label class="campo">${rotulo(campoDe(campos, "observacao"), dados)}
         <textarea id="md-obs">${esc(M.observacao || "")}</textarea></label>
-      <label class="campo">Fotos do serviço${k.exige_foto ? ' <span class="ob">*</span>' : ""}
+      <label class="campo">${k.jeito === "PLANILHA" ? "Outras fotos (gerais)" : "Fotos do serviço"}${k.exige_foto && k.jeito !== "PLANILHA" ? ' <span class="ob">*</span>' : ""}
         <input type="file" id="md-fotos" multiple accept="image/*,.pdf">
         <div class="dica">${k.exige_foto ? "Este contrato exige foto em cada medição." : "Opcional neste contrato."}
           ${M.fotos.length ? `<b>${M.fotos.length} arquivo(s) escolhido(s).</b>` : ""}</div></label>
       <button type="button" class="btn-portal" id="md-enviar">Registrar medição</button>` : ""}</div>`;
-  el("md-contrato").addEventListener("change", e => { M = {contrato_id: e.target.value, qtd: {}, fotos: []}; formMedicao(); });
+  el("md-contrato").addEventListener("change", e => { M = {contrato_id: e.target.value, qtd: {}, obs: {}, fotosItem: {}, fotos: []}; formMedicao(); });
   if (!k) return;
   el("md-ini").addEventListener("change", e => M.periodo_inicio = e.target.value);
   el("md-fim").addEventListener("change", e => M.periodo_fim = e.target.value);
@@ -729,23 +742,39 @@ function formMedicao(){
   if (el("md-valor")) el("md-valor").addEventListener("input", e => M.valor_medido = e.target.value);
   document.querySelectorAll("[data-mq]").forEach(x => x.addEventListener("change", () => {
     M.qtd[x.dataset.mq] = x.value; formMedicao(); }));
+  document.querySelectorAll("[data-mobs]").forEach(x => x.addEventListener("input", () => { M.obs[x.dataset.mobs] = x.value; }));
+  document.querySelectorAll("[data-mfoto]").forEach(x => x.addEventListener("change", () => {
+    M.fotosItem[x.dataset.mfoto] = [...x.files]; formMedicao(); }));
   el("md-fotos").addEventListener("change", e => { M.fotos = [...e.target.files]; formMedicao(); });
   el("md-enviar").addEventListener("click", () => enviarMedicao(k));
 }
 
 async function enviarMedicao(k){
-  if (k.exige_foto && !M.fotos.length) { recado("Este contrato exige foto do serviço. Anexe ao menos uma.", "erro"); return; }
+  if (k.exige_foto) {
+    const medidos = Object.entries(M.qtd).filter(([, q]) => numero(q) > 0).map(([id]) => id);
+    const semFoto = k.jeito === "PLANILHA"
+      ? k.itens.filter(it => medidos.includes(String(it.id)) && !(M.fotosItem[it.id] || []).length).map(it => it.descricao)
+      : (M.fotos.length ? [] : ["o serviço"]);
+    if (semFoto.length) { recado("Este contrato exige foto. Falta foto de: " + esc(semFoto.join(", ")) + ".", "erro"); return; }
+  }
   const b = el("md-enviar"); b.disabled = true; b.textContent = "Registrando…";
   try {
     const corpo = {periodo_inicio: M.periodo_inicio || null, periodo_fim: M.periodo_fim || null,
       observacao: M.observacao || "",
       itens: Object.entries(M.qtd).filter(([, q]) => numero(q) > 0)
-        .map(([id, q]) => ({contrato_item_id: +id, quantidade: String(numero(q))})),
+        .map(([id, q]) => ({contrato_item_id: +id, quantidade: String(numero(q)),
+                            observacao: M.obs[id] || ""})),
       valor_medido: M.valor_medido ? String(numero(M.valor_medido)) : null};
     const r = await api(`/erp/api/empreitas/${k.id}/medicoes`, json(corpo));
     const falhas = [];
-    for (const f of M.fotos) {
+    const subir = [...M.fotos.map(f => [f, "Foto geral da medição"])];
+    Object.entries(M.fotosItem).forEach(([id, fs]) => {
+      const it = k.itens.find(x => String(x.id) === String(id));
+      if (numero(M.qtd[id]) > 0) fs.forEach(f => subir.push([f, "Serviço: " + (it ? it.descricao : id)]));
+    });
+    for (const [f, desc] of subir) {
       const fd = new FormData(); fd.append("arquivo", f); fd.append("categoria", "FOTO");
+      fd.append("descricao", desc);
       try { await api(`/erp/api/anexos/medicao/${r.medicao.id}`, {method: "POST", body: fd}); }
       catch(e){ falhas.push(f.name); }
     }
@@ -754,7 +783,8 @@ async function enviarMedicao(k){
       `. Agora ela espera a autorização.` +
       (falhas.length ? `<br><b>Não subiram:</b> ${esc(falhas.join(", "))} — anexe de novo pelo ERP.` : ""),
       falhas.length ? "aviso" : "ok");
-    M = {qtd: {}, fotos: []};
+    M = {qtd: {}, obs: {}, fotosItem: {}, fotos: []};
+    carregarContratos();
     CONTRATOS = (await api("/erp/portal/api/financeiro/inicio")).contratos;
     await recarregarLista(); formMedicao(); return;
   } catch(e){ recado(esc(e.message), "erro"); }
@@ -803,7 +833,8 @@ function formContrato(){
         <option value="1" ${K.exige_foto === "1" ? "selected" : ""}>Sim</option>
         <option value="0" ${K.exige_foto === "0" ? "selected" : ""}>Não</option></select></label></div>
     <label class="campo">${r("observacoes")}<textarea id="k-obs">${esc(K.observacoes || "")}</textarea></label>
-    ${docsHtml(K, C.contrato.documentos, K, false)}
+    ${ContratoGerado.html(K.cg)}
+    ${K.cg.gerar ? "" : docsHtml(K, C.contrato.documentos, K, false)}
     <button type="button" class="btn-portal" id="k-enviar">Cadastrar contrato</button>` : ""}</div>`;
   el("k-modo").addEventListener("change", e => { K.modo = e.target.value; formContrato(); });
   if (!st) return;
@@ -817,11 +848,16 @@ function formContrato(){
     K.itens.splice(+b.dataset.tiraK, 1); formContrato(); }));
   if (el("k-mais")) el("k-mais").addEventListener("click", () => { K.itens.push({}); formContrato(); });
   ligarCredor(K, "fornecedor", formContrato);
-  ligarDocs(K, formContrato, () => {});
+  if (!K.cg.gerar) ligarDocs(K, formContrato, () => {});
+  ContratoGerado.ligar(K.cg, el("form"), formContrato);
   el("k-enviar").addEventListener("click", enviarContrato);
 }
 
 async function enviarContrato(){
+  const falta = ContratoGerado.faltando(K.cg);
+  if (falta) return recado(esc(falta), "erro");
+  if (!K.cg.gerar && !(K.docs || []).length)
+    return recado("Anexe o contrato assinado — ou marque para o sistema gerar e colher as assinaturas.", "erro");
   const b = el("k-enviar"); b.disabled = true; b.textContent = "Cadastrando…";
   try {
     const r = await api("/erp/api/empreitas", json({
@@ -834,7 +870,8 @@ async function enviarContrato(){
       parcelas_previstas: K.parcelas_previstas || null,
       data_inicio: K.data_inicio || null, data_fim: K.data_fim || null,
       retencao_garantia_pct: String(numero(K.retencao_garantia_pct || "0")),
-      exige_foto: K.exige_foto === "1", observacoes: K.observacoes || ""}));
+      exige_foto: K.exige_foto === "1", observacoes: K.observacoes || "",
+      contrato_gerado: K.cg.gerar ? ContratoGerado.escolhas(K.cg) : null}));
     const falhas = [];
     for (const d of (K.docs || [])) {
       const fd = new FormData(); fd.append("arquivo", d.arquivo);
@@ -843,8 +880,10 @@ async function enviarContrato(){
       catch(e){ falhas.push(d.arquivo.name); }
     }
     recado(`Contrato <b>${esc(r.contrato.numero)}</b> cadastrado (${moeda(r.contrato.valor)}) — esperando o aval.` +
+      (K.cg.gerar ? " O texto do contrato já está pronto em <b>Contratos</b>; os links de assinatura saem no aval." : "") +
       (falhas.length ? `<br><b>Não subiram:</b> ${esc(falhas.join(", "))}.` : ""), falhas.length ? "aviso" : "ok");
-    K = {modo: "", itens: [{}], exige_foto: "1", docs: []}; await recarregarLista(); formContrato(); return;
+    K = {modo: "", itens: [{}], exige_foto: "1", docs: [], cg: ContratoGerado.novo()};
+    await recarregarLista(); carregarContratos(); formContrato(); return;
   } catch(e){ recado(esc(e.message), "erro"); }
   b.disabled = false; b.textContent = "Cadastrar contrato";
 }
@@ -914,6 +953,78 @@ async function abrir(x){
         el("dlg").close(); recado(`Pedido ${esc(t.numero)} cancelado.`, "ok");
         await recarregarLista(); desenharMeus();
       } catch(e){ alert(e.message); }
+    });
+  } catch(e){ recado(esc(e.message), "erro"); }
+}
+
+// ---------------------------------------------------------------------------
+// 6. CONTRATOS DA OBRA (27/11/2026) — todos os das obras da pessoa, não só os
+// que ela cadastrou: o saldo, as medições com as fotos e a assinatura.
+// ---------------------------------------------------------------------------
+let CONTRATOS_OBRA = [];
+async function carregarContratos(){
+  try { CONTRATOS_OBRA = (await api("/erp/portal/api/financeiro/contratos")).contratos;
+        el("n-contratos").textContent = CONTRATOS_OBRA.length;
+        if (ABA === "contratos") desenharContratos(); } catch(_) {}
+}
+function desenharContratos(){
+  el("conteudo").innerHTML = `<div class="bloco">${CONTRATOS_OBRA.length ? CONTRATOS_OBRA.map((c, i) => `
+    <div class="item-lista" data-ct="${c.id}">
+      <div class="cresce"><b>${esc(c.numero)} · ${esc(c.prestador)}</b>
+        <small>${esc(c.obra)} · ${esc(c.objeto)}</small>
+        <small>medido ${moeda(c.medido)} de ${moeda(c.valor_vigente)} (${Number(c.percentual_medido).toLocaleString("pt-BR")}%) · ${c.medicoes} medição(ões)</small>
+        <span class="etiqueta ${c.status === "VIGENTE" ? "verde" : ["AGUARDANDO_AVAL", "AGUARDANDO_ASSINATURA"].includes(c.status) ? "ambar" : ""}">${esc(c.situacao)}</span>
+        ${c.assinatura && c.assinatura !== c.situacao ? `<span class="etiqueta">${esc(c.assinatura)}</span>` : ""}</div>
+      <div class="valor">${moeda(c.saldo)}<small>saldo</small></div></div>`).join("")
+    : `<div class="vazio">Nenhum contrato de empreita nas suas obras.</div>`}</div>`;
+  document.querySelectorAll("[data-ct]").forEach(b => b.addEventListener("click", () => abrirContrato(+b.dataset.ct)));
+}
+async function abrirContrato(id){
+  try {
+    const c = (await api(`/erp/portal/api/financeiro/contratos/${id}`)).contrato;
+    const a = c.assinatura;
+    el("dlg-dentro").innerHTML = `<h3>${esc(c.numero)} · ${esc(c.prestador)}</h3>
+      <div class="mini">${esc(c.obra)}${c.periodo ? " · " + esc(c.periodo) : ""}</div>
+      <p><span class="etiqueta">${esc(c.situacao)}</span></p>
+      <p style="white-space:pre-line">${esc(c.objeto)}</p>
+      <table class="tabela-mini">
+        <tr><td>Valor do contrato</td><td style="text-align:right">${moeda(c.valor_vigente)}</td></tr>
+        <tr><td>Medido</td><td style="text-align:right">${moeda(c.medido)} (${Number(c.percentual_medido).toLocaleString("pt-BR")}%)</td></tr>
+        <tr><td><b>Saldo</b></td><td style="text-align:right"><b>${moeda(c.saldo)}</b></td></tr></table>
+      ${c.itens_orcamento.length ? `<p class="mini"><b>Serviços</b></p><table class="tabela-mini">${c.itens_orcamento.map(i =>
+        `<tr><td>${esc(i.descricao)}<br><small class="mini">feito ${i.medido.toLocaleString("pt-BR")} de ${i.quantidade.toLocaleString("pt-BR")} ${esc(i.unidade || "")} (${i.percentual.toLocaleString("pt-BR")}%)</small></td>
+          <td style="text-align:right">resta ${i.saldo.toLocaleString("pt-BR")}</td></tr>`).join("")}</table>` : ""}
+      ${a ? `<p class="mini"><b>Contrato e assinatura:</b> ${esc(a.rotulo)}<br>${a.assinaturas.map(x =>
+          `${x.assinou ? "✅" : "⏳"} ${x.papel === "CONTRATADO" ? "Empreiteiro" : "Pela empresa"}: ${esc(x.nome)}${
+            x.assinou ? " — assinou em " + dia(x.assinado_em) : x.abriu ? " — abriu o link, falta assinar" : x.enviado_em ? " — link enviado" : ""}${
+            !x.assinou && a.situacao === "EM_ASSINATURA" ? ` <button type="button" class="btn-portal secundario pequeno" data-reenvia="${x.papel}">reenviar o link</button>` : ""}`).join("<br>")}
+          <br><a href="#" id="ver-texto">ver o texto do contrato</a></p><div id="texto-contrato"></div>` : ""}
+      ${c.documentos.length ? `<p class="mini"><b>Documentos:</b><br>${c.documentos.map(d =>
+        `<a href="/erp/anexo/${d.id}" target="_blank">${esc(d.nome)}</a>`).join("<br>")}</p>` : ""}
+      <p class="mini"><b>Medições</b></p>${c.medicoes.length ? c.medicoes.slice().reverse().map(m => `<div class="linha">
+        <div class="cab-linha">Medição ${m.numero} · ${esc(m.periodo || m.quando)} <span class="etiqueta">${esc(m.situacao)}</span></div>
+        <div class="mini">${moeda(m.valor_medido)} · medida por ${esc(m.medido_por)}</div>
+        ${m.itens.map(i => `<div class="mini">• ${esc(i.servico)}: ${i.quantidade.toLocaleString("pt-BR")} ${esc(i.unidade)} = ${moeda(i.valor)}${i.observacao ? " — <i>" + esc(i.observacao) + "</i>" : ""}</div>`).join("")}
+        ${m.observacao ? `<div class="mini"><i>${esc(m.observacao)}</i></div>` : ""}
+        ${m.fotos.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${m.fotos.map(f =>
+          (f.mime || "").startsWith("image/") ? `<a href="/erp/anexo/${f.id}" target="_blank"><img src="/erp/anexo/${f.id}" alt="${esc(f.descricao || f.nome)}" title="${esc(f.descricao || "")}" style="width:84px;height:84px;object-fit:cover;border-radius:8px"></a>`
+            : `<a class="mini" href="/erp/anexo/${f.id}" target="_blank">${esc(f.nome)}</a>`).join("")}</div>` : ""}
+      </div>`).join("") : `<div class="mini">Nenhuma medição ainda.</div>`}
+      <button type="button" class="btn-portal" id="dlg-fecha">Fechar</button>`;
+    el("dlg").scrollTop = 0;
+    document.getElementById("dlg").showModal();
+    el("dlg-fecha").addEventListener("click", () => el("dlg").close());
+    document.querySelectorAll("[data-reenvia]").forEach(b => b.addEventListener("click", async () => {
+      try {
+        const r = await api(`/erp/api/empreitas/${id}/contrato/reenviar`, json({papel: b.dataset.reenvia}));
+        b.textContent = r.saiu && r.saiu.length ? "enviado ✓" : "não saiu: " + (r.falhou || []).join("; ");
+      } catch(e){ b.textContent = e.message; }
+    }));
+    const v = el("ver-texto");
+    if (v) v.addEventListener("click", async ev => {
+      ev.preventDefault();
+      const t = await api(`/erp/api/empreitas/${id}/contrato`);
+      el("texto-contrato").innerHTML = `<div class="linha" style="white-space:pre-wrap;font-size:12.5px;max-height:50vh;overflow:auto"><b>${esc(t.titulo || "")}</b>\n\n${esc(t.texto || "")}</div>`;
     });
   } catch(e){ recado(esc(e.message), "erro"); }
 }

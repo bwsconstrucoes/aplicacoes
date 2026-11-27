@@ -136,6 +136,18 @@ tela de perfis. Levantamento feito: **59 telas no menu, 28 ações de entrada**
 (marcar uma seção do Ponto abre as 15 telas do Ponto) e **8 das 39 seções não
 abrem tela nenhuma** — são permissões dentro da tela, e na tela de cadastro
 parecem área. Três saídas propostas; nada feito.
+### ⚑ 27/11/2026 (2) — (chat do Financeiro) ASSINATURA DE CONTRATO À DISTÂNCIA; MIGRAÇÃO 132 (registro entre áreas)
+
+- **Migração 132** (`contrato_documentos`, `contrato_assinaturas`): só tabelas novas.
+- **Mensageria:** tipo novo `erp.contrato_assinatura` (WhatsApp) em
+  `app/apps/mensageria/core.py`; `tests/test_mensageria.py` sabe dele.
+- **Cinco rotas públicas novas** (`/erp/assinar/<token>…`): quem assina é de
+  fora e não tem login. `tests/test_permissoes_rotas.py` lista as cinco com o
+  motivo.
+- `api_aprovar_empreita`: contrato com documento gerado vai para
+  `AGUARDANDO_ASSINATURA` no aval (não vigente) e os links saem.
+Detalhe em `HISTORICO_FINANCEIRO.md`, 27/11/2026 (2).
+
 ### ⚑ 27/11/2026 — (chat do Financeiro) O PORTAL GANHOU A ÁREA FINANCEIRO; `_gravar_lancamento` (registro entre áreas)
 
 - `core/portal.py` (`AREAS`): "Pagamentos" virou **"Financeiro"**, área-tela

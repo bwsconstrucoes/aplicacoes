@@ -37,6 +37,10 @@ completo e em operação. Mexer aqui mexe em dinheiro que sai.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### 27/11/2026 (2) — CONTRATO GERADO E ASSINADO, CONTRATOS DA OBRA — no ramo, NÃO publicado
+
+Tem a **migração 132**. Ver a seção de 27/11/2026 (2) abaixo. Espera o "pode".
+
 ### 27/11/2026 — O FINANCEIRO NO PORTAL E A REGRA DOS CAMPOS — ✔ PUBLICADO
 
 **Publicado na `main` em 27/11/2026**, com o "pode" dele (*"não tem nada
@@ -51,6 +55,100 @@ esta mudança por falta da chave no ambiente de teste).
    subtipos e campos e condições para que eu possa revisar a lógica"*.
 2. Responder as decisões marcadas **ESCOLHA MINHA** abaixo.
 3. Testar no portal como administrador (só ele vê a área por enquanto).
+
+---
+
+## 27/11/2026 (2) — O CONTRATO DE EMPREITA GERADO E ASSINADO À DISTÂNCIA; OS CONTRATOS DA OBRA
+
+**No ramo, NÃO publicado. Tem migração: 132** (`contrato_documentos` e
+`contrato_assinaturas` — só tabelas novas, nenhuma coluna em tabela existente:
+sem o botão apertado, contrato, aval e medição funcionam como antes; só a
+assinatura pelo sistema fica indisponível, e a tela diz isso).
+
+### O pedido e as decisões dele (no mesmo dia)
+
+> *"a gente precisaria coletar uma assinatura (…) do empreiteiro (…) duas
+> pessoas assinariam. Seria o de fora e um de dentro."*
+
+| Pergunta | Resposta dele |
+|---|---|
+| quem assina pela empresa | *"uma pessoa do cadastro de colaboradores (…) só selecionar quem é (…) aproveitar já o telefone que tem lá"* |
+| por onde vai | *"Vai ser o WhatsApp mesmo. WhatsApp e e-mail"* — e o WhatsApp do sistema **está ligado** (eu tinha dito que nascia desligado; ele corrigiu) |
+| o texto | *"A parte jurídica do contrato você faz aí. Botar alguma coisa selecionável (…) e dê espaço também pra gente fazer a digitação (…) a IA deveria dar uma ajustada"* |
+| quem acompanha | *"ele vê todos os contratos. Da obra. É aquela mesma lógica do ponto"* |
+| fotos | *"fotos dos serviços, para poder demonstrar que aquele serviço está sendo executado"* |
+
+### Como ficou
+
+- **`core/titulos/contrato_assinatura.py`**: o texto-base (10 cláusulas, a partir
+  do rascunho `MODELO_CONTRATO_EMPREITA.md`), 8 cláusulas para marcar (multa por
+  atraso com o %, entregar limpo, não repassar, ajudantes identificados,
+  equipamento emprestado com a lista, material do empreiteiro, nota a cada
+  medição, autoriza fotos), dois prazos editáveis (pagar a medição em até X
+  dias, aviso de rescisão), o espaço livre que a IA revisa (ela sugere e aponta
+  risco — vínculo de emprego, contradição; a pessoa aceita ou mantém o dela).
+  Os dados vêm do cadastro: a empresa é a da OBRA, quem assina é um colaborador.
+- **O caminho:** cadastro (o documento nasce junto, na mesma gravação — se não
+  puder ser gerado, o contrato também não fica) → aval (os links saem AGORA, e
+  o contrato vai para **"Esperando as assinaturas"** em vez de vigente) →
+  cada um abre `/erp/assinar/<link>` no celular, sem login, pede o código de 6
+  dígitos (WhatsApp ou e-mail), confirma o CPF/CNPJ e assina com o dedo →
+  com as duas, o PDF final (texto + registro de cada assinatura: hora, canal,
+  IP, lacre SHA-256) vai para o arquivo do contrato e ele fica **vigente**.
+  Contrato "já tenho assinado" continua como sempre (aval = vigente); no portal
+  ele exige o documento anexado.
+- **Defesas da página pública:** token de 24 bytes guardado só como resumo e
+  trocado a cada reenvio; código vale 15 min, 5 tentativas, 5 códigos/hora;
+  CPF/CNPJ conferido; lacre conferido no momento de assinar (texto mudado =
+  recusa); teto por IP. Link inválido e vencido respondem igual.
+- **Portal › aba Contratos:** todos os contratos das obras da pessoa (saldo,
+  % medido, situação da assinatura com "reenviar o link", o texto do contrato,
+  os documentos, e cada medição com os serviços, as observações e as fotos).
+- **Medição:** foto e observação **por serviço**; com "exige foto", cada serviço
+  medido precisa da sua foto (a foto vai como anexo da medição, com a legenda
+  "Serviço: …").
+- **ERP › Empreitas:** a mesma peça no "Novo contrato" (é UM arquivo,
+  `templates/_contrato_gerado.html`, incluído nas duas telas) e o quadro da
+  assinatura na ficha, com "reenviar o link".
+
+### ⚠️ O que está escrito para ele ver
+
+- **Validade jurídica**: é assinatura eletrônica (Lei 14.063/2020, MP
+  2.200-2/2001 art. 10 §2º), aceita pelas partes na própria cláusula final — a
+  mesma base do ponto e dos termos do DP. **Não passou por advogado.** O texto
+  da cláusula de natureza civil não protege se a prática for de empregado.
+- **Retenção de INSS** do empreiteiro pessoa física: não tratada — confirmar
+  com o contador.
+- **A busca de quem assina pela empresa** procura qualquer colaborador ativo
+  pelo nome (devolve só nome e cargo). Não há lista de "quem pode assinar por
+  qual empresa"; se ele quiser restringir, é uma marcação nova no cadastro.
+- **A IA da revisão** usa a mesma chave da leitura de documentos
+  (OPENAI_API_KEY) e conta no teto de IA de cada pessoa. Não exercitada aqui.
+
+### Mexi em arquivo de outras áreas (registrado em `HISTORICO.md`)
+
+`app/apps/mensageria/core.py` (tipo novo `erp.contrato_assinatura`, WhatsApp),
+`tests/test_mensageria.py` e `tests/test_permissoes_rotas.py` (as listas
+fechadas: o tipo novo por WhatsApp e as 5 rotas públicas da assinatura, com o
+motivo escrito).
+
+### Verificação
+
+- 8 testes novos com banco (`tests/test_contrato_assinatura_banco.py`): o texto
+  puxa o cadastro e as cláusulas, o caminho inteiro até vigente com PDF, código
+  errado, CPF errado, texto mudado, reenvio invalida o link antigo, contrato sem
+  documento continua vigente no aval.
+- Percorrido no navegador (celular) contra banco descartável, com o WhatsApp
+  gravando em arquivo: cadastro com o contrato gerado → aba Contratos → aval
+  por outra pessoa → os dois links saem → cada um pede o código, confirma o
+  documento e assina → "assinado pelas duas partes", PDF baixa → contrato
+  vigente → medição recusada sem a foto do serviço, aceita com ela → a foto e a
+  observação aparecem na ficha do contrato.
+
+**Achado de passagem, de outra área:** desde as migrações 130/131 (chat do DP),
+usuário **sem perfil cadastrado** não entra em lugar nenhum — nem ADMIN. É a
+regra nova deles e está certa; anoto porque derrubou o meu teste no navegador
+até eu dar perfil aos usuários de teste.
 
 ---
 

@@ -897,3 +897,12 @@ Isso se faz **em fases, cada uma segura sozinha, sem mexer em pasta**:
 - **Make quebrava JSON com aspas** na mensagem do `/telegram/enviar`.
   Conserto: a rota aceita formulário e upload, além de JSON, e destrava `\n`
   literal. Sem data.
+
+## 27/11/2026 — (chat do Financeiro) tipo novo `erp.contrato_assinatura`
+
+Política **WhatsApp**: leva o link do contrato de empreita e o código de 6
+dígitos para quem assina — o empreiteiro, que é de fora e não tem o Telegram
+do bot, e o colaborador que assina pela empresa. Decisão do dono: *"vai ser o
+WhatsApp mesmo. WhatsApp e e-mail"*. Quem manda é
+`app/apps/erp/core/titulos/contrato_assinatura.py`. Detalhe em
+`app/apps/erp/HISTORICO_FINANCEIRO.md`, 27/11/2026 (2).

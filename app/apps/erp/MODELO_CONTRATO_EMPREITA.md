@@ -1,7 +1,9 @@
 # Contrato de empreitada para pequenos serviços — RASCUNHO para revisão
 
-> **Rascunho de 27/11/2026, para o dono e o advogado revisarem.** Ainda não está
-> no sistema. Os campos entre `{{ }}` são preenchidos pelo ERP a partir do
+> **Rascunho de 27/11/2026, para o dono e o advogado revisarem.** ⚑ Desde o
+> mesmo dia **está no sistema**: o texto que vale é o de
+> `core/titulos/contrato_assinatura.py` (`montar`), que nasceu deste rascunho e
+> ganhou as cláusulas para marcar. Este arquivo fica como a versão de leitura. Os campos entre `{{ }}` são preenchidos pelo ERP a partir do
 > cadastro: da empresa do grupo, do empreiteiro, da obra e do contrato.
 >
 > Serve para o serviço pequeno contratado direto com pessoa física ou

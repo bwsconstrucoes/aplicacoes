@@ -1,0 +1,151 @@
+{# O CONTRATO GERADO PELO SISTEMA — a parte do cadastro do contrato de empreita
+   que escolhe as cláusulas, quem assina pela empresa e o contato do empreiteiro
+   (27/11/2026). UMA peça, incluída no portal da obra E na tela de Empreitas do
+   ERP: duas cópias divergiriam no primeiro mês. A regra está em
+   `core/titulos/contrato_assinatura.py`. #}
+<style>
+  .cg { margin-top: 14px; padding: 12px; border: 1px solid #D6DEEB; border-radius: 12px; background: #FAFBFD; }
+  .cg h4 { margin: 0 0 4px; font-size: 14.5px; }
+  .cg .cg-mini { font-size: 12.5px; color: #5A6B85; }
+  .cg label { display: block; margin-top: 10px; font-size: 13px; font-weight: 600; color: #31507F; }
+  .cg input[type=text], .cg input:not([type]), .cg textarea, .cg select {
+         width: 100%; box-sizing: border-box; padding: 9px; margin-top: 4px; border: 1px solid #C9D3E4;
+         border-radius: 9px; font-size: 15px; font-family: inherit; background: #fff; }
+  .cg textarea { min-height: 80px; }
+  .cg .cg-op { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; color: #10233F; }
+  .cg .cg-op input[type=checkbox] { width: 20px; height: 20px; margin: 2px 0 0; flex: none; }
+  .cg .cg-op small { display: block; color: #5A6B85; }
+  .cg .cg-duas { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .cg .cg-achados button { display: block; width: 100%; text-align: left; border: 0; background: #fff;
+         border-bottom: 1px solid #E6EAF2; padding: 8px 6px; font: inherit; cursor: pointer; }
+  .cg .cg-escolhido { background: #EEF2FA; border-radius: 9px; padding: 8px 10px; margin-top: 4px;
+         display: flex; justify-content: space-between; gap: 8px; }
+  .cg .cg-btn { border: 0; border-radius: 9px; padding: 8px 12px; font-size: 13px; font-weight: 700;
+         background: #E3E9F3; color: #31507F; cursor: pointer; margin-top: 8px; }
+  .cg .cg-ia { margin-top: 8px; padding: 10px; border-radius: 9px; background: #F1F7FF; font-size: 13.5px;
+         white-space: pre-wrap; }
+  .cg .cg-ob { color: #A32020; }
+</style>
+<script>
+// Estado: {gerar, assinante:{id,nome,cargo,tem_contato}, opcionais:{}, campos:{},
+//          texto_adicional, prazo_pagamento_dias, aviso_rescisao_dias,
+//          contratado_telefone, contratado_email, _ia, _busca}
+const ContratoGerado = {
+  MODELO: null, DISPONIVEL: true,
+  async carregar(){
+    if (this.MODELO) return;
+    const r = await fetch("/erp/api/empreitas/contrato-modelo");
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.erro || "Não consegui abrir o modelo do contrato.");
+    this.MODELO = d.modelo; this.DISPONIVEL = d.disponivel;
+  },
+  novo(){
+    const E = {gerar: true, assinante: null, opcionais: {}, campos: {}, texto_adicional: "",
+               contratado_telefone: "", contratado_email: ""};
+    if (this.MODELO) {
+      this.MODELO.opcionais.forEach(o => { E.opcionais[o.chave] = !!o.padrao;
+        Object.entries(o.campos || {}).forEach(([k, c]) => { E.campos[k] = c.padrao; }); });
+      Object.entries(this.MODELO.parametros).forEach(([k, p]) => { E[k] = String(p.padrao); });
+    }
+    return E;
+  },
+  _e: t => String(t ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c])),
+  html(E){
+    const e = this._e, M = this.MODELO;
+    if (!M) return `<div class="cg"><div class="cg-mini">carregando o modelo do contrato…</div></div>`;
+    let h = `<div class="cg"><h4>Contrato e assinatura</h4>
+      <label class="cg-op"><input type="radio" name="cg-gerar" value="1" ${E.gerar ? "checked" : ""}>
+        <span>Gerar o contrato pelo sistema e colher as assinaturas
+        <small>o empreiteiro e quem assina pela empresa recebem o link por WhatsApp e e-mail depois do aval</small></span></label>
+      <label class="cg-op"><input type="radio" name="cg-gerar" value="0" ${E.gerar ? "" : "checked"}>
+        <span>Já tenho o contrato assinado <small>anexe o contrato assinado ao cadastro</small></span></label>`;
+    if (!E.gerar) return h + `</div>`;
+    if (!this.DISPONIVEL) return h + `<div class="cg-mini cg-ob" style="margin-top:8px">A assinatura pelo sistema
+      precisa da atualização do banco (132). Peça ao administrador para aplicar em Configurações.</div></div>`;
+    const a = E.assinante;
+    h += `<label>Quem assina pela empresa <span class="cg-ob">*</span></label>` + (a
+      ? `<div class="cg-escolhido"><span><b>${e(a.nome)}</b> <small class="cg-mini">${e(a.cargo || "")}</small>
+          ${a.tem_contato ? "" : `<br><small class="cg-ob">sem telefone nem e-mail no cadastro de colaboradores</small>`}</span>
+          <button type="button" class="cg-btn" data-cg-troca style="margin:0">trocar</button></div>`
+      : `<input data-cg-busca placeholder="nome de quem assina (um colaborador)" value="${e(E._busca || "")}" autocomplete="off">
+         <div class="cg-achados" id="cg-achados"></div>
+         <div class="cg-mini">O link e o código vão para o telefone e o e-mail do cadastro de colaboradores dele.</div>`);
+    h += `<div class="cg-duas">
+        <label>WhatsApp do empreiteiro<input data-cg="contratado_telefone" inputmode="tel" value="${e(E.contratado_telefone)}" placeholder="se não estiver no cadastro"></label>
+        <label>E-mail do empreiteiro<input data-cg="contratado_email" inputmode="email" value="${e(E.contratado_email)}" placeholder="opcional"></label></div>
+      <div class="cg-mini">Em branco, vale o que está no cadastro do credor; preenchido, atualiza o cadastro.</div>
+      <div class="cg-duas">${Object.entries(M.parametros).map(([k, p]) =>
+        `<label>${e(p.rotulo)}<input data-cg="${k}" inputmode="numeric" value="${e(E[k])}"></label>`).join("")}</div>
+      <label>Cláusulas que entram neste contrato</label>
+      ${M.opcionais.map(o => `<label class="cg-op"><input type="checkbox" data-cg-op="${o.chave}" ${E.opcionais[o.chave] ? "checked" : ""}>
+        <span>${e(o.rotulo)}<small>${e(o.explicacao)}</small>
+        ${E.opcionais[o.chave] ? Object.entries(o.campos || {}).map(([ck, cc]) =>
+          `<input data-cg-campo="${ck}" placeholder="${e(cc.rotulo)}" value="${e(E.campos[ck] ?? "")}" style="margin-top:4px">`).join("") : ""}
+        </span></label>`).join("")}
+      <label>Alguma condição a mais? (escreva do seu jeito)
+        <textarea data-cg="texto_adicional" placeholder="ex.: o empreiteiro guarda as ferramentas dele no container da obra; a laje só é medida depois da cura">${e(E.texto_adicional)}</textarea></label>
+      <button type="button" class="cg-btn" data-cg-ia>✨ Pedir à IA para ajustar o texto</button>
+      ${E._ia ? `<div class="cg-ia"><b>Sugestão da IA:</b>\n${e(E._ia.texto)}${E._ia.observacoes.length
+          ? `\n\n<b>Atenção:</b>\n• ${E._ia.observacoes.map(e).join("\n• ")}` : ""}</div>
+        <button type="button" class="cg-btn" data-cg-usar>Usar o texto da IA</button>
+        <button type="button" class="cg-btn" data-cg-descartar>Manter o meu</button>` : ""}
+      <div class="cg-mini" style="margin-top:8px">O texto completo do contrato fica pronto logo depois de cadastrar,
+        em <b>Contratos</b>. Até o aval, dá para ajustar e gerar de novo.</div></div>`;
+    return h;
+  },
+  ligar(E, raiz, aoMudar){
+    const q = s => raiz.querySelectorAll(s);
+    q('[name="cg-gerar"]').forEach(x => x.addEventListener("change", () => { E.gerar = x.value === "1"; aoMudar(); }));
+    q("[data-cg]").forEach(x => x.addEventListener("input", () => { E[x.dataset.cg] = x.value; }));
+    q("[data-cg-op]").forEach(x => x.addEventListener("change", () => { E.opcionais[x.dataset.cgOp] = x.checked; aoMudar(); }));
+    q("[data-cg-campo]").forEach(x => x.addEventListener("input", () => { E.campos[x.dataset.cgCampo] = x.value; }));
+    q("[data-cg-troca]").forEach(x => x.addEventListener("click", () => { E.assinante = null; aoMudar(); }));
+    let espera = null;
+    q("[data-cg-busca]").forEach(x => x.addEventListener("input", () => {
+      E._busca = x.value; clearTimeout(espera);
+      espera = setTimeout(async () => {
+        const alvo = raiz.querySelector("#cg-achados");
+        if (x.value.trim().length < 3) { alvo.innerHTML = ""; return; }
+        const d = await (await fetch("/erp/api/empreitas/assinantes?q=" + encodeURIComponent(x.value))).json();
+        alvo.innerHTML = (d.pessoas || []).map((p, i) => `<button type="button" data-i="${i}"><b>${this._e(p.nome)}</b>
+          <small class="cg-mini">${this._e(p.cargo || "")}</small></button>`).join("") || `<div class="cg-mini">Ninguém com esse nome.</div>`;
+        alvo.querySelectorAll("[data-i]").forEach(b => b.addEventListener("click", () => {
+          E.assinante = d.pessoas[+b.dataset.i]; E._busca = ""; aoMudar(); }));
+      }, 300);
+    }));
+    q("[data-cg-ia]").forEach(x => x.addEventListener("click", async () => {
+      x.disabled = true; x.textContent = "A IA está lendo…";
+      try {
+        const r = await fetch("/erp/api/empreitas/contrato-ia", {method: "POST",
+          headers: {"Content-Type": "application/json"}, body: JSON.stringify({texto: E.texto_adicional})});
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.erro || "A IA não respondeu.");
+        E._ia = {texto: d.texto, observacoes: d.observacoes || []}; aoMudar();
+      } catch(err){ alert(err.message); x.disabled = false; x.textContent = "✨ Pedir à IA para ajustar o texto"; }
+    }));
+    q("[data-cg-usar]").forEach(x => x.addEventListener("click", () => { E.texto_adicional = E._ia.texto; E._ia = null; aoMudar(); }));
+    q("[data-cg-descartar]").forEach(x => x.addEventListener("click", () => { E._ia = null; aoMudar(); }));
+  },
+  faltando(E){
+    if (!E.gerar) return "";
+    if (!this.DISPONIVEL) return "A assinatura pelo sistema ainda não está disponível (falta a atualização do banco).";
+    if (!E.assinante) return "Escolha quem assina pela empresa.";
+    if (!E.assinante.tem_contato) return `${E.assinante.nome} não tem telefone nem e-mail no cadastro de colaboradores.`;
+    return "";
+  },
+  escolhas(E){
+    const r = {assinante_colaborador_id: E.assinante ? E.assinante.id : null,
+               opcionais: E.opcionais, campos: E.campos, texto_adicional: E.texto_adicional,
+               contratado_telefone: E.contratado_telefone, contratado_email: E.contratado_email};
+    Object.keys(this.MODELO.parametros).forEach(k => { r[k] = E[k]; });
+    return r;
+  },
+  async gerar(contratoId, E){
+    const r = await fetch(`/erp/api/empreitas/${contratoId}/contrato`, {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(this.escolhas(E))});
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.erro || "Não consegui gerar o contrato.");
+    return d;
+  },
+};
+</script>
