@@ -881,7 +881,7 @@ async function abrir(x){
       <p class="mini">${x.especie === "contrato" ? "O contrato precisa do aval no ERP antes de ser medido."
         : "Quem tem alçada autoriza a medição no ERP — aí ela vira pagamento e aparece aqui."}</p>
       <button type="button" class="btn-portal secundario" id="dlg-fecha">Fechar</button>`;
-    el("dlg").showModal(); el("dlg-fecha").addEventListener("click", () => el("dlg").close()); return;
+    document.getElementById("dlg").showModal(); el("dlg-fecha").addEventListener("click", () => el("dlg").close()); return;
   }
   try {
     const t = (await api(`/erp/portal/api/financeiro/titulo/${x.id}`)).titulo;
@@ -905,7 +905,7 @@ async function abrir(x){
           <textarea id="dlg-motivo" placeholder="ex.: lancei em duplicidade"></textarea></label>
         <button type="button" class="btn-portal secundario" id="dlg-cancela">Cancelar o pedido</button>` : ""}
       <button type="button" class="btn-portal" id="dlg-fecha">Fechar</button>`;
-    el("dlg").showModal();
+    document.getElementById("dlg").showModal();
     el("dlg-fecha").addEventListener("click", () => el("dlg").close());
     const c = el("dlg-cancela");
     if (c) c.addEventListener("click", async () => {
