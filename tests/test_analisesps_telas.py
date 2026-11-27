@@ -5552,6 +5552,11 @@ def test_a_folha_que_fecha_nao_grita(app, monkeypatch):
         "pessoas": 10, "total": Decimal("1000.00"),
         "importado_em": None, "importado_por": "", "fecha": True,
         "lista_de_avisos": []}])
+    # ⚠️ AS PENDÊNCIAS DA FOLHA TAMBÉM SÃO DUBLADAS (27/11/2026): sem isto o teste
+    # ia ao banco de teste, e uma folha nº 1 deixada por um teste anterior no mesmo
+    # processo aparecia com pendências que não eram dele.
+    monkeypatch.setattr(fa, "criticas", lambda folha_id: {
+        "pendentes": [], "sairam": [], "saindo": []})
     # ⚠️ `?lista=1` PORQUE A ABA MUDOU DE DESTINO em 29/09/2026: com folha
     # importada, "/folha/importar" manda direto para a última folha aberta. Esta
     # tela continua sendo a estante (soltar arquivo, apagar o que veio errado), e
@@ -7227,7 +7232,7 @@ def test_o_aviso_do_cadastro_LEVA_A_DATA_da_carga(app, monkeypatch):
     # entendi essa pergunta"*. A data já está na frase de cima; o que faltava era
     # dizer o que FAZER.
     assert "não é o estado" not in html
-    assert "Corrija na planilha de colaboradores" in html
+    assert "Corrija no cadastro do ERP" in html
     assert "Atualizar cadastro" in html
 
 
@@ -7333,6 +7338,31 @@ def test_a_tela_do_ponto_MOSTRA_a_ultima_tentativa_que_falhou(app, monkeypatch):
     assert "HTTP 401" in html
     assert "credenciais do Mobponto estão sendo recusadas" in html, (
         "o recado tem de dizer o que fazer com um 401, não só mostrar o erro")
+
+
+def test_a_LISTA_VAZIA_do_Mobponto_nao_e_culpa_da_credencial(app, monkeypatch):
+    """27/11/2026: *"não estou conseguindo baixar o ponto por falta de credencial"* —
+    a tela dizia "401 ou 403: credenciais recusadas" em TODA falha, inclusive quando o
+    Mobponto aceitou a credencial e devolveu a lista vazia (01/2026)."""
+    import datetime as dt
+
+    from app.apps.analisesps import ponto as _ponto, tarefas
+
+    monkeypatch.setattr(_ponto, "_pronto", lambda: True)
+    monkeypatch.setattr(_ponto, "configurado", lambda: True)
+    monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [])
+    monkeypatch.setattr(tarefas, "estado", lambda pista="geral": {
+        "rodando": False, "detalhe": None, "interrompida": None})
+    monkeypatch.setattr(tarefas, "ultima_do_tipo", lambda tipo: {
+        "tipo": "ponto", "disparo": "MARCELO",
+        "inicio": dt.datetime(2026, 11, 27, 9, 0),
+        "fim": dt.datetime(2026, 11, 27, 9, 11), "ok": False,
+        "mensagem": "o Mobponto não retornou colaboradores para 01/2026. Verifique se a "
+                    "competência está correta e se há ponto lançado nela.",
+        "linhas": 0, "visto_em": None, "em_andamento": False})
+    html = _como_mestre(app).get("/analisesps/folha/ponto").get_data(as_text=True)
+    assert "não retornou colaboradores" in html
+    assert "credenciais do Mobponto estão sendo recusadas" not in html
 
 
 def test_a_tela_do_ponto_mostra_a_ultima_que_DEU_CERTO_mas_veio_vazia(

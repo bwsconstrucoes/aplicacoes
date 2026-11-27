@@ -151,6 +151,415 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 27/11/2026 (4) — SEM PERFIL, SEM ACESSO A NADA: a ponte do cargo caiu
+
+**Ele leu a ressalva que eu tinha deixado e chamou pelo nome:** *"me parece uma
+gambiarra esse comentário que você fez."* E deu a regra, que é mais simples que
+a minha ressalva:
+
+> *"Era para simplesmente desconectar isso a cargos. Por exemplo, se o cara não
+> fez o cadastramento, ponto final, ele não tem absolutamente acesso a nada, ele
+> é apenas um colaborador cadastrado. Ele só iria ter a possibilidade de ser
+> liberado a acessar alguma coisa no momento que ele solicitasse o acesso e
+> fosse liberado e definido um perfil. Até então, absolutamente tudo
+> bloqueado."*
+
+**Ele estava certo, e o meu erro tinha nome:** eu tratava *"a pessoa não tem
+perfil"* e *"não consigo ler a tabela de perfis"* como a mesma resposta — as
+duas devolviam "não sei", e as duas caíam no cargo antigo. São coisas
+diferentes:
+
+| Situação | Antes | Agora |
+|---|---|---|
+| a tabela de perfis não existe, ou a pessoa nem é encontrada | cargo | **cargo** — é a rede que impede o ERP de cair entre publicar e apertar o botão do banco |
+| a pessoa existe e **não tem perfil** | cargo | **nada. Não entra em lugar nenhum** |
+| a pessoa tem perfil que não marca nada | portal | **nada** — nem o portal |
+
+**A exceção que FICA, e ela não é gambiarra:** o ADMIN continua alcançando as
+três telas que consertam o sistema (`PROTEGIDAS_DO_ADMIN`: entrar, abrir
+Configurações e mexer em operadores). Sem isso, um administrador sem perfil
+trancaria a si mesmo do lado de fora — e ninguém mais poderia dar perfil a
+ninguém. Tem teste.
+
+**O que a tela passou a dizer**, porque uma regra dura sem aviso vira chamado
+de telefone:
+
+1. **A lista de Operadores avisa em vermelho**, no alto: *"N pessoa(s) ativa(s)
+   sem perfil de acesso — elas não entram no sistema"*, com os nomes. E a
+   coluna do perfil, que mostrava o cargo em cinza, agora mostra **"sem
+   perfil · não entra no sistema"**.
+2. **O cadastro da pessoa avisa** na aba "O que faz", e o campo Cargo base
+   passou a dizer a verdade: *"não libera acesso nenhum"*.
+3. **Quem for barrado vê o motivo certo**: *"Seu acesso ainda não foi
+   liberado — você está cadastrado, mas ainda sem perfil"*, com só o botão
+   Sair (mandar essa pessoa "voltar ao início" seria mandá-la para outra
+   recusa).
+
+⚠️ **O RISCO DESTA MUDANÇA, e ele é real e imediato:** quem estiver sem perfil
+**perde o acesso no instante da publicação** — inclusive gente de obra que usa
+o portal hoje. Não dá para saber daqui quantas pessoas são; só a lista de
+Operadores da produção responde. A lista avisa, e o conserto é escolher o
+perfil de cada uma — um minuto por pessoa.
+
+**UM APERTO DE ESCOPO VEIO JUNTO, e ele vale ser lido com atenção.** Quem
+enxerga **"só os próprios lançamentos"** abria o detalhe de **qualquer obra da
+empresa**. O motivo era honesto e passava despercebido: o filtro dessa pessoa é
+a AUTORIA, e **obra não tem autor** — então a função devolvia "sem filtro".
+Desde 24/11 isso estava tapado só para o cargo "administrativo de obra"; com o
+cargo fora da decisão, a tapagem passou a valer para todo mundo: **quem não
+enxerga todas as obras abre só as obras marcadas no cadastro dela**, e quem não
+tem obra marcada não abre nenhuma. É o padrão NEGAR, e é mais apertado do que
+era ontem para quem está em "só os próprios lançamentos".
+
+**A suíte precisou mudar junto, e em dois lugares:**
+
+1. **Os 3.300 casos de homologação** montavam usuários **com cargo e sem
+   perfil** — todos passariam a não abrir nada. Agora conferem o que a pessoa
+   **realmente tem** pelo perfil, e não o que o cargo daria.
+2. **109 arquivos de teste** criam gente no banco de verdade. Pedir perfil a
+   cada um seria trabalho repetido em 109 lugares e pegadinha em todo teste
+   novo. Em vez disso, o `conftest.py` cria **um perfil equivalente por
+   cargo**, uma vez por sessão, e **cola automaticamente** em quem for gravado
+   sem perfil. ⚠️ Isso esconde a regra do teste comum, e é escolha consciente:
+   a regra tem testes próprios, que criam gente por SQL direto justamente para
+   passar por fora do automatismo.
+
+**Duas limpezas de passagem:** uma fixture `operadores` duplicada (a primeira
+nunca rodava, sombreada pela segunda) e o caso do portal no roteiro, que agora
+usa um operador de perfil só-diário em vez do cargo.
+
+**O que ele dispensou:** o buraco do perfil que só aprova. *"Esse perfil só
+confirmar ou só aprovar não vai ter não. Ele vai estar dentro de uma
+supervisão, gestão, parceria."* Não mexi.
+
+### 27/11/2026 (2) — O CARGO BASE DEIXOU DE MANDAR: quem manda é o perfil
+
+**Pedido dele, com todas as letras:** *"o cargo base não deveria influenciar em
+nada. quem deve mandar é o perfil."*
+
+**O que o cargo base decidia até hoje, escondido:** se a pessoa entrava pelo
+**portal** ou pelas telas de dentro (`PERFIS_SO_PORTAL`, o "administrativo de
+obra"), que telas o menu mostrava, e que obras ela alcançava num registro sem
+autor. O perfil de acesso podia abrir meio sistema que não adiantava — e foi
+isso que prendeu uma pessoa do DP fora do ERP por dias, sem aviso em tela
+nenhuma.
+
+**A regra agora** (`permissoes.entra_pelo_portal`):
+
+| A pessoa | Quem decide |
+|---|---|
+| **tem perfil de acesso** | **o perfil, e só ele.** O cargo é ignorado |
+| **não tem perfil nenhum** | o cargo, porque não há outra coisa — e a tela passa a dizer isso |
+
+E "entrar pelo portal" deixou de ser uma propriedade do cargo: virou uma
+**marcação no perfil** — *"Esta gente trabalha na obra: entra pelo portal"*
+(migração **130**).
+
+⚠️ **TENTEI DEDUZIR ANTES, E NÃO SERVE — fica registrado para ninguém repetir.**
+A primeira versão calculava: "entra pelo portal quem não abre nada além do
+diário". O próprio portal derruba a conta: ele **lista colaboradores e abre
+solicitação ao DP**, então quem trabalha na obra PRECISA dessas permissões
+para usá-lo — e pela dedução deixaria de ser "da obra" justamente por ter o
+que precisa para trabalhar. Portal e telas de dentro são **duas portas para as
+mesmas permissões**; qual porta a pessoa usa é decisão de quem monta o perfil,
+não uma conta.
+
+⚠️ **POR QUE A PONTE DO CARGO FICOU, e não é preguiça:** quem tem cargo
+"administrativo de obra" e **nenhum** perfil cadastrado passaria, sem ela, a
+enxergar **40 telas** — é o que a tabela em código dá a esse cargo. A ponte
+morre sozinha quando todo mundo tiver perfil.
+
+⚠️ **TEM MIGRAÇÃO (130):** ao juntar na `main`, apertar **"Aplicar
+atualizações do banco"** no mesmo momento. Enquanto ela não roda, a coluna não
+existe e a marcação responde "não" — ou seja, **ninguém entra pelo portal** até
+o botão ser apertado. Depois disso, marque o perfil da gente de obra.
+
+**Mexeu em:** `core/auth/permissoes.py`, `core/auth/secoes.py`, `routes.py` (a
+guarda que roda antes de toda rota, o menu e o link do portal), o modelo e o
+serviço de perfis, e os textos do cadastro. Testes com banco de verdade em
+`tests/test_quem_entra_pelo_portal_banco.py` (9 casos): cargo de obra + perfil
+de escritório fica no ERP; cargo de escritório + perfil marcado vai para o
+portal; dois perfis com AS MESMAS permissões e marcações diferentes vão para
+portas diferentes; perfil vazio não entra em lugar nenhum; sem perfil, nada; e
+o ADMIN sem perfil ainda abre Configurações. Conferido também no navegador.
+
+### 27/11/2026 (3) — A tela de Operadores repaginada
+
+**Pedido dele, em três mensagens seguidas:** *"essa tela de operadores é bem
+ruim. Acho ela bagunçada e desorganizada. A forma de seleção das coisas é ruim.
+A divisão dessas seções tá totalmente solta, sem conexão entre cada área e cada
+tela"* e *"essa tela precisa de uma repaginação completa. a experiência de uso
+dela é péssima."*
+
+**O que estava ruim, medido:**
+
+| Onde | O que havia |
+|---|---|
+| cadastro da pessoa | **um** formulário em rolagem única com ~90 controles — nome, perfil, obras, cargo, senha, fundo fixo, limite de IA, contas do plano, empresas, projetos, obras de novo e 64 caixinhas |
+| as 64 caixinhas | em ordem **alfabética**: "Fechar o mês do ponto" caía entre "Encaminhar por WhatsApp" e "Guardar documento no arquivo" |
+| perfil de acesso | 39 linhas com um **menu suspenso** em cada uma |
+| as áreas do perfil | digitadas à mão, e **não batiam com os módulos**: "Notas emitidas" ficava em Obras no cadastro e em Financeiro no menu; "Mensagens" é módulo no menu e era linha de Administração |
+| o que cada marcação abria | **não estava escrito em lugar nenhum** |
+
+**O que ficou:**
+
+1. **O cadastro em quatro abas** — *Quem é* (nome, login, senha, convite),
+   *O que faz* (perfil, perfis somados, cargo, o que ela vê, ajuste fino),
+   *Onde faz* (obras, empresas, projetos, alcance) e *Limites* (fundo fixo, IA,
+   contas do plano). Um botão Salvar só, para as quatro.
+2. **"O que esta pessoa vê quando entra"** — a lista dos módulos e telas que
+   aquela pessoa abre, calculada na hora pelo mesmo código do menu. É a
+   pergunta que quem cadastra faz de verdade, e o cadastro nunca respondia.
+3. **O perfil agrupado pelo MENU**, não por área digitada
+   (`secoes.para_a_tela_pelo_menu`): cada linha diz **quais telas abre**, em
+   azul. Onde uma marcação abre o módulo inteiro — o Ponto são 15 telas — a
+   linha diz isso em vez de listar quinze nomes.
+4. **Os três níveis viraram botão com cor** (cinza fecha, azul olha, verde
+   mexe), e cada módulo tem *"o módulo todo: Não acessa · Só olhar · Olhar e
+   mexer"* em um clique.
+5. **Um placar vivo**: "este perfil abre 6 telas em 1 módulo, com edição em 4".
+6. **As 8 seções que não abrem tela** (aval, aprovar, homologar conta, salário,
+   acesso ao portal, encaminhar, trabalho da equipe, operadores) saíram da
+   lista de telas e foram para um bloco próprio, dizendo **dentro de que tela**
+   cada uma vale. Tratá-las como área era parte da bagunça.
+7. **O ajuste fino agrupado por módulo**, com a conta de quantas ações a pessoa
+   tem em cada um e quantas são ajuste.
+
+**O que NÃO mudou, de propósito:** nenhuma permissão foi tirada ou dada por
+causa da repaginação; as chaves das seções continuam as mesmas (sem migração);
+e o cadastro continua sendo um só, usado pela tela de Operadores **e** pela
+ficha da pessoa em Pessoal (`erp_operador_form.html`).
+
+**Arquivos compartilhados mexidos — vale avisar outro chat:**
+`routes.py`, `core/auth/permissoes.py`, `core/auth/secoes.py`,
+`templates/erp_config.html`, `templates/erp_operador_form.html`,
+`static/erp.css`.
+
+### 27/11/2026 — A tela abre para quem tem o trabalho dela (8 telas fechadas, 17 marcações)
+
+**Como apareceu:** uma pessoa do DP era jogada para o portal toda vez que
+entrava no ERP (causa: o campo **Cargo base** do cadastro dela, que é o que
+decide o desvio — não o perfil de acesso). O dono ajustou o cargo, o desvio
+parou, e aí veio o sintoma de verdade: *"agora a pessoa só tá vendo a tela
+pessoas no ponto"*. Ele olhou a lista de permissões dela e disse o que
+importa: *"to achando que essa lista do que pode fazer não condiz muito com a
+realidade"*, e depois *"pelo que to vendo tem que revisar tudo. essas seções
+não condizem muito com o que vemos. deveria ter um método mais simples."*
+
+**A conta deu razão a ele, e o número é este: 8 telas não abriam para quem
+tinha justamente o trabalho delas, por 17 marcações diferentes.**
+
+| A pessoa podia | E não abria |
+|---|---|
+| Cadastrar e editar colaboradores · Lançar despesa de colaborador · Pedir à contabilidade | **as 4 telas de Pessoal** |
+| Fechar e reabrir o mês do ponto · Configurar o ponto · Tratar o ponto · Aprovar atestado | **as 15 telas do Ponto** |
+| Cancelar título · Reclassificar | Financeiro › Solicitações e Confirmar |
+| Pedir material · Liberar solicitação · Cadastrar insumo/fornecedor | as 7 telas de Suprimentos |
+| Lançar o diário de obra | Obras › Diário de obra |
+| Guardar documento no arquivo | Administração › Arquivo |
+| Atender solicitação do DP | Pessoal › Solicitações e Férias |
+| Autorizar compra fora do fluxo | Suprimentos › Pedidos |
+
+Sem erro nenhum na tela: a área simplesmente **não existia no menu** dela.
+
+**POR QUE ACONTECEU, e é o que impede a repetição:** há **três** caminhos que
+concedem ação, e só um deles passa pela seção.
+
+1. **perfil cadastrado** (migração 065) — `secoes.acoes_do_nivel` já dá o "só
+   olhar" junto com o "olhar e mexer", de propósito, com o motivo escrito no
+   código: *"perfil que mexe e não enxerga abriria a tela vazia"*. **Este
+   caminho nunca teve o furo.**
+2. **cargo em código** (a tabela `PERMISSOES`) — entrega ação solta.
+3. **marcação por pessoa** (migração 032) — entrega ação solta. **Foi por aqui
+   que a pessoa do DP ficou com 16 verbos e nenhuma porta.**
+
+Em 13/09/2026 cada tela ganhou ação própria (foi o que fez a área sumir do
+menu de quem não a tem). A `ACOES_IMPLICADAS` foi atualizada **à mão** naquele
+dia, e à mão ficaram 17 pares de fora. Ninguém percebeu porque o perfil
+cadastrado — o caminho que o dono usa para montar perfil novo — estava certo.
+
+**O conserto:** a `ACOES_IMPLICADAS` passou a **nascer do catálogo de seções**,
+e não da mão: toda ação do "olhar e mexer" de uma seção implica o "só olhar" da
+mesma seção. Seção nova entra já certa. Um teste parametrizado percorre os 23
+pares (`tests/test_telas_abrem_para_quem_trabalha.py`) — e ele foi conferido
+reintroduzindo o defeito, que o faz falhar em 4 lugares.
+
+**O que o conserto NÃO faz, e é de propósito:** ninguém ganha verbo novo, só a
+tela onde o verbo que já tinha se exerce. E **desmarcar à mão continua
+fechando** — a marcação explícita por pessoa vence a implicação, com teste
+próprio. Nos cargos o efeito é quase nulo: gestor e supervisor de obra passam a
+ver **Suprimentos › Pedidos** (eles autorizam compra fora do fluxo, que mora
+nessa fila); os outros nove cargos não mudam em nada.
+
+**Dois rótulos que mentiam, corrigidos no mesmo passo:**
+
+| Ação | Dizia | Diz agora |
+|---|---|---|
+| `ver_pessoal` | "Ver despesas de colaborador" | "Abrir as telas de Pessoal (colaboradores, despesas, contabilidade)" |
+| `solicitar_dp` | "Abrir solicitação ao DP" | "Abrir solicitação ao DP e ver a fila e as férias" |
+
+O primeiro é o que mais confundiu: a ação abre **quatro** telas de Pessoal, e o
+nome falava de despesa — colado ao de `lancar_dc` ("Lançar despesa de
+colaborador"), que é outra coisa.
+
+**O QUE FICOU DE FORA, e é decisão dele** (relatado na resposta, sem obra): o
+"método mais simples" que ele pediu. Os números do levantamento, para quem
+retomar: **59 telas no menu e só 28 ações de entrada** — marcar uma seção do
+Ponto abre as 15 telas do Ponto, marcar uma de Pessoal abre as 4. E **8 das 39
+seções não abrem tela nenhuma** (aval, aprovar, homologar conta, salário,
+acesso ao portal, encaminhar, trabalho da equipe, operadores): são permissões
+DENTRO da tela, mas na tela de cadastro parecem área. As três saídas propostas
+a ele: (a) a tela de perfil espelhar o MENU, uma linha por tela que ele vê, e
+dizer quais abrem juntas; (b) separar as ações para a marcação ser tela por
+tela — 31 ações novas, mexe na guarda, risco de trancar gente; (c) um botão "o
+que esta pessoa vê" no cadastro, que lista os módulos e telas daquela pessoa e
+o motivo de cada uma. Nada disso foi feito.
+
+### 27/11/2026 — O assistente deixa de ser um menu de 20 pratos (começando pelo Pessoal)
+
+**O que aconteceu:** ele perguntou *"quantos funcionários temos hoje na obra de
+CRECHESUAPE?"* e recebeu de volta duas opções sem relação nenhuma — *"o que tem
+a pagar num período?"* e *"quais obras não emitem nota hoje por falta de
+cadastro?"*. Reproduzi a frase no `entender`: as duas empataram em **0,40** de
+confiança, acima do mínimo de 0,34, cada uma por **duas palavras genéricas**
+(*hoje*, *obra*). A palavra que decidia tudo — **"funcionário"** — não existe em
+lugar nenhum do catálogo, **e nada penaliza isso**.
+
+**A causa de fundo, que é maior:** o catálogo tinha **20 perguntas**, em cinco
+assuntos (financeiro, contratos, suprimentos, obras, documentos). **Nenhuma
+sobre gente.** E o `PERGUNTAS.md` já tinha **219 perguntas escritas**. Nove por
+cento implementado, e a distância crescendo — cada coisa nova que o ERP ganha
+nasce invisível para o assistente, porque alguém precisaria escrever a consulta
+dela à mão.
+
+#### A virada, e foi ele quem a enxergou
+
+> *"A pergunta que a gente vai fazer é algo meio que infinito. Não tem como ser
+> previsto tudo (…) eu não queria perder tempo tendo que digitar alguma
+> pergunta que na verdade vai surgir no momento. Então nessa lógica nunca vai
+> funcionar. (…) Eu estava pensando se a gente não poderia construir algo
+> dinâmico."*
+
+Ele está certo, e isso derruba o caminho de "me diga as dez perguntas que você
+faria" que eu tinha proposto na véspera. **Em vez de uma lista de PERGUNTAS, um
+MAPA do que existe** — e a consulta montada na hora contra o mapa.
+
+**O catálogo escrito à mão NÃO SAIU**, e não deve sair: pergunta conhecida é
+código testado, exata, instantânea e **sem custo de IA**. Ele é tentado
+primeiro. O mapa cobre o resto, que é o infinito.
+
+#### As quatro peças
+
+| Peça | O que é |
+|---|---|
+| `core/perguntas/mapa.py` | as **visões** do Pessoal — `pessoas`, `solicitacoes`, `ferias`, `presenca_na_obra` — com as colunas explicadas em português de negócio e **o recorte da pessoa já aplicado dentro** |
+| `core/perguntas/consulta.py` | **as travas**: um SELECT só, só as visões do mapa, lista de palavras proibidas, prazo de 8 s, teto de 200 linhas |
+| `core/perguntas/na_hora.py` | pede a consulta à IA e devolve a resposta **com o caminho à mostra** |
+| `scripts/varrer_perguntas.py` | a **varredura dos papéis** — a ideia dele |
+
+⚠️ **POR QUE VISÕES E NÃO AS 144 TABELAS.** Entregar o banco inteiro para a IA
+escrever SQL seria mais rápido de fazer e errado por três motivos: a pessoa só
+pode ver as obras dela (o assistente viraria a porta dos fundos do controle de
+acesso); `situacao`, `etapa`, `vinculo` e `regime` parecem a mesma coisa e não
+são (a IA escolheria errado **em silêncio**); e com 144 tabelas não há como
+testar o que ela monta. Com quatro visões, há — e há.
+
+⚠️ **O RECORTE É O MESMO DAS TELAS** (`obras_no_pessoal`), aplicado dentro da
+visão. Não há regra nova: se o assistente tivesse recorte próprio, mudar a
+permissão numa tela o deixaria para trás. **Há teste com banco provando que
+quem alcança uma obra não conta a gente da outra** — inclusive quando a
+consulta montada tenta filtrar pela obra alheia.
+
+#### A resposta mostra o caminho, e isso não é enfeite
+
+O dono **não tem como conferir o número** — ele não lê SQL e não deve precisar.
+Então toda resposta montada na hora vem com **o que eu entendi**, **onde olhei**
+e **o que filtrei**, em português, e diz com todas as letras que **foi montada
+na hora**, ao contrário das do catálogo. É a mesma regra que a resposta sobre
+documentos segue desde 11/09/2026: *sem a citação, é a IA falando*.
+
+**E os três "não sei" passaram a ser três**, porque a saída de cada um é outra:
+*não entendi a pergunta* (reescreva), *entendi mas o sistema não guarda isso*
+(falta construir) e *entendi mas você não alcança* (falta permissão). Antes
+viravam todos a mesma sugestão aleatória.
+
+#### A varredura dos papéis — e o que ela NÃO é
+
+Ideia dele: *"se colocar no papel de um diretor (…) de um coordenador de
+suprimento ou de um supervisor de obras (…) uma IA, para poder fazer esses
+questionamentos."*
+
+⚠️ **Ela não treina nada, e dizer o contrário seria vender fumaça.** Nenhum
+modelo aprende; nada fica mais esperto sozinho. O que ela faz é **gerar a lista
+de perguntas no lugar dele** e medir quanto o sistema responde hoje: o que o
+catálogo já pega, o que o mapa monta, e **o que não dá — separando "o dado não
+existe" de "o mapa não alcança"**, que são dois trabalhos diferentes.
+
+**É ela que casa com o sistema em mudança**, que foi a última frase dele:
+cresceu uma área, mudou um campo? Roda de novo e a diferença mostra o que o
+assistente perdeu. Recusa banco sem "teste" no nome e recusa rodar sem chave de
+IA.
+
+#### O que fica em aberto, dito para não parecer pronto
+
+1. **O MODELO nunca foi exercitado contra este mapa — e só ele.** O resto do
+   caminho tem teste: `na_hora.responder` ganhou um `montador` injetável, e a
+   suíte percorre tudo trocando **só a ida à OpenAI** por um dublê (31 casos
+   com banco). Prova que uma consulta boa chega à resposta, que uma proibida
+   vira recado em português em vez de estourar a tela, que "o mapa não
+   alcança" é resposta e não falha, e que seis consultas do tipo que um
+   modelo competente escreveria — com `GROUP BY`, `ILIKE`, `date_trunc` e
+   filtro pelos rótulos em português — rodam contra o mapa.
+
+   **O que continua sem prova:** que o modelo ESCOLHE a visão certa. Isso só
+   se mede com chave e internet, pela varredura dos papéis. Para medir:
+   a chave da OpenAI entra nas configurações do ambiente de nuvem (em
+   *Network secrets*, ou como variável `OPENAI_API_KEY`), e a sessão
+   seguinte já a enxerga.
+2. **A trava de leitura é conferência de TEXTO, não um usuário de banco
+   só-leitura.** Um usuário próprio, sem permissão de escrita, seria mais
+   forte. Enquanto não existe, o que segura são as travas de `consulta.py`.
+3. **Não há aprendizado ainda.** Pergunta respondida bem não vira pergunta
+   conhecida, e pergunta sem resposta não entra numa fila. Era a terceira
+   camada do desenho e **não foi feita** — precisa de migração e de tela.
+4. **Só Pessoal.** Financeiro, Suprimentos e Obras continuam só com o
+   catálogo. O mapa deles é o mesmo trabalho, área por área.
+
+**Arquivos compartilhados mexidos:** `routes.py` (rota nova
+`/erp/api/perguntar/pessoal`, ação `ver_pessoal`) e
+`templates/erp_perguntar.html`. **Sem migração de banco.**
+
+---
+### 27/11/2026 (2) — A readmissão pedida já bate ponto; a saída antiga fica no histórico
+
+**Publicado em 27/11/2026** (com o "pode" dele). Sem migração.
+
+Ele: *"Como a pessoa está desligada, ela tem uma data de saída registrada (…)
+Isso aí está impactando na batida do ponto, mesmo que a pessoa tenha
+solicitado. (…) Essa data de saída ela tem que ficar no histórico, mas na hora
+que a pessoa solicitar a admissão, ela tem que sumir (…) E assim a pessoa já
+começa a poder bater ponto imediatamente."* (Vale para readmissão como
+prestador e como CLT — as duas são o pedido "Admissão de Colaborador" com CPF
+de desligado.)
+
+- **No pedido** (`pessoas.liberar_ponto_na_readmissao`, chamado no `abrir`):
+  a saída vai para o VÍNCULO (a história — se a pessoa não tinha vínculo
+  gravado, ele é criado com as datas do cadastro); o cadastro fica ATIVO, sem
+  saída/último dia/aviso, com início e admissão do pedido (provisórios — o DP
+  confirma ao atender) e na etapa Inicial. O que havia antes vai para o pedido
+  (`saida_anterior`, escondido da tela).
+- **Recusado ou cancelado** (`voltar_a_saida`): volta tudo como era — DESLIGADO,
+  a saída de antes, a etapa de antes; o ponto volta a recusar.
+- **Os pedidos abertos antes desta mudança** são liberados sozinhos, uma vez,
+  no primeiro acesso ao ERP depois de publicar
+  (`liberar_readmissoes_ja_pedidas`, gancho no `routes.py`).
+- ⚠️ **O celular pessoal** que o ponto bloqueou quando a pessoa saiu continua
+  bloqueado: ela bate no aparelho da obra na hora; para o "Meu ponto" no celular
+  dela, o aparelho precisa ser aprovado de novo (regra do ponto, não mexi).
+- ⚠️ Se o ponto estiver usando a planilha "Registro de Colaboradores" como base
+  (e não o ERP), a saída da planilha continua mandando — não verifiquei qual
+  base está ligada em produção.
+
 ### 27/11/2026 — Tudo da solicitação no mesmo canto: os e-mails, a devolução pela obra e a conversa inteira
 
 Ele: *"Pra eliminar essa tela, eles teriam que estar todos dentro de cada SDP,
@@ -256,6 +665,11 @@ casamento"* dos e-mails que já saíram com CT.
   `[SDP-…]` (procura no assunto gravado), depois `[CT-…]` (os antigos), depois
   CPF. A tela mostra a marca (`contabilidade.marca_do_pedido` / SQL
   `substring(assunto …)`); CT sem solicitação continua mostrando o CT.
+
+**Decidido por ele (27/11/2026):** resposta só em texto, sem documento, NÃO
+conclui — *"O normal é sempre ter retorno. Mera ciência não faz nada."* Fica
+como está: o agente guarda a resposta na conversa da solicitação e o DP decide.
+Não perguntar de novo.
 
 **O que ficou de fora / não verificado:** a leitura por IA do retorno não roda
 aqui (sem chave); resposta só em texto (sem anexo) não conclui nada — o

@@ -36,6 +36,7 @@ def _como_dicionario(s: Session, p: Perfil, com_pessoas: bool = True) -> dict:
         "descricao": p.descricao or "",
         "de_sistema": bool(p.de_sistema),
         "ativo": bool(p.ativo),
+        "entra_pelo_portal": bool(getattr(p, "entra_pelo_portal", False)),
         "secoes": marcacoes,
         # O que este perfil abre, em número — para a tela dizer "12 seções, 4
         # com edição" sem ter de reproduzir a regra no navegador.
@@ -104,6 +105,7 @@ def criar(s: Session, dados: dict, autor: Usuario) -> dict:
     marcacoes = _limpar_secoes(dados.get("secoes"))
     p = Perfil(nome=nome, descricao=(dados.get("descricao") or "").strip() or None,
                de_sistema=False, ativo=True,
+               entra_pelo_portal=bool(dados.get("entra_pelo_portal")),
                criado_por=autor.id if autor else None)
     s.add(p)
     s.flush()
@@ -132,6 +134,8 @@ def editar(s: Session, perfil_id: int, dados: dict, autor: Usuario) -> dict:
         p.nome = _nome_valido(s, dados.get("nome"), perfil_id)
     if "descricao" in dados:
         p.descricao = (dados.get("descricao") or "").strip() or None
+    if "entra_pelo_portal" in dados:
+        p.entra_pelo_portal = bool(dados.get("entra_pelo_portal"))
 
     if "secoes" in dados:
         marcacoes = _limpar_secoes(dados.get("secoes"))

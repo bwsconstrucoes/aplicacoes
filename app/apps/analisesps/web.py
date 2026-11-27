@@ -3868,6 +3868,32 @@ def folha_a_descontar_descontado():
     return {"ok": True}
 
 
+@bp.route("/folha/<int:folha_id>/ponto-anual", methods=["POST"])
+@exige_operador
+def folha_ponto_anual(folha_id: int):
+    """O relatório anual de presenças do Mobponto, para o rateio do 13º (27/11/2026) —
+    ver `ponto_anual.py`. O ano é o da folha."""
+    from . import folha_arquivo as fa, ponto_anual
+    folha = fa.abrir(folha_id)
+    if not folha:
+        return redirect(url_for("analisesps.tela_folha"))
+    arquivo = request.files.get("arquivo")
+    try:
+        conteudo = arquivo.read(ponto_anual.MAXIMO + 1) if arquivo else b""
+        pessoas = ponto_anual.ler(conteudo)
+        feito = ponto_anual.guardar(int(folha["ano"]), pessoas, auth.nome_atual() or "",
+                                    getattr(arquivo, "filename", "") or "")
+        meses = ", ".join(f"{m:02d}" for m in feito["por_mes"])
+        aviso = (f"Relatório anual de presenças importado: {feito['pessoas']} pessoas, "
+                 f"meses {meses}/{folha['ano']}. O rateio do 13º já usa os meses sem ponto.")
+    except ponto_anual.ErroDoRelatorioAnual as e:
+        aviso = f"Não consegui ler o relatório anual: {e}"
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Relatório anual de presenças: falhou a importação")
+        aviso = f"Não consegui importar o relatório anual: {e}"
+    return redirect(url_for("analisesps.tela_folha_aberta", folha_id=folha_id, aviso=aviso))
+
+
 @bp.route("/folha/<int:folha_id>")
 @exige_consulta
 def tela_folha_aberta(folha_id: int):
@@ -3924,6 +3950,8 @@ def tela_folha_aberta(folha_id: int):
     return render_template(
         "analisesps_folha_aberta.html", aba="folha", subaba="importar",
         grupos=subtelas_agrupadas(), montado=montado, erro=erro,
+        recado=request.args.get("aviso") or None,
+        agrupamentos=fg.AGRUPAMENTOS,
         folha=montado.get("folha"), folhas=fa.listar(teto=24),
         criticas=fa.criticas(folha_id) if montado else None,
         filiais=fa.totais_por_filial(folha_id) if montado else [],
@@ -3955,6 +3983,8 @@ def _filtros_da_folha() -> dict:
     filtros = {"busca": request.args.get("q") or ""}
     for chave in fg.CHAVES_DE_FILTRO:
         filtros[chave] = [v for v in request.args.getlist(chave) if v]
+    # O agrupamento da lista (27/11/2026) — não é filtro: só arruma as linhas.
+    filtros["agrupar"] = request.args.get("agrupar") or ""
     return filtros
 
 

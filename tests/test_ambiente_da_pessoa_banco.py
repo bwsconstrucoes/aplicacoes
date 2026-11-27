@@ -87,7 +87,11 @@ def test_cada_tela_embutida_abre(app_real, sessao_real, pessoa):
 
 def test_a_permissao_de_abrir_vem_de_ver_pessoal_ou_o_ponto():
     from app.apps.erp.core.auth.permissoes import ACOES_IMPLICADAS, pode
-    assert set(ACOES_IMPLICADAS["abrir_pessoa"]) == {"ver_pessoal", "ver_ponto"}
+    # 27/11/2026: o conjunto passou a ser MAIOR, e de propósito — a tabela de
+    # implicações nasce do catálogo de seções, e quem edita colaborador também
+    # abre a ficha da pessoa. O que este teste garante continua sendo o que
+    # importa: ver o Pessoal ou ver o Ponto abre a ficha.
+    assert {"ver_pessoal", "ver_ponto"} <= set(ACOES_IMPLICADAS["abrir_pessoa"])
     for perfil in P:
         u = Usuario(perfil=perfil)
         if pode(u, "ver_pessoal") or pode(u, "ver_ponto"):

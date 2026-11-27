@@ -249,6 +249,79 @@ els("btn-resp-excel").addEventListener("click", () => baixarResposta("xlsx"));
 els("btn-resp-pdf").addEventListener("click", () => baixarResposta("pdf"));
 
 // ------------------------------------------------------- pergunta escrita
+// ---------------------------------------------------------------------------
+// A PERGUNTA MONTADA NA HORA — ver `core/perguntas/na_hora.py`
+//
+// Devolve true quando conseguiu responder. Quando não, devolve false e deixa
+// a tela seguir com o "não sei" de sempre — só que agora com o motivo certo.
+// ---------------------------------------------------------------------------
+function colunasDasLinhas(linhas) {
+  // O tipo sai do VALOR, porque a consulta é montada na hora e não há como
+  // alguém ter declarado o tipo antes. Erro aqui é de formatação, não de
+  // número: o pior caso é uma data aparecer como texto.
+  const chaves = Object.keys(linhas[0] || {});
+  return chaves.map(c => {
+    const v = linhas.find(l => l[c] !== null && l[c] !== undefined)?.[c];
+    const tipo = /^\d{4}-\d{2}-\d{2}/.test(String(v)) ? "data"
+               : (typeof v === "number" ? "numero" : "texto");
+    return {chave: c, rotulo: c.replace(/_/g, " "), tipo};
+  });
+}
+
+async function tentarMontarNaHora(texto, leitura) {
+  els("leitura").innerHTML = `<div class="cartao-dica" style="margin-top:10px">
+    Não é uma pergunta que eu já conhecia — estou montando a consulta…</div>`;
+  let r;
+  try {
+    const d = await api("/erp/api/perguntar/pessoal", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({pergunta: texto})});
+    r = d.resposta;
+  } catch (e) {
+    // Sem IA ligada, sem saldo, sem permissão: cai no "não sei" de sempre,
+    // mas dizendo o motivo de verdade em vez de sugerir pergunta aleatória.
+    els("leitura").innerHTML = `<div class="aviso erro" style="margin-top:10px">
+      <b>Não consegui responder.</b> ${escapar(e.message)}</div>`;
+    return true;
+  }
+  if (!r.respondeu) {
+    els("cartao-resposta").hidden = true;
+    els("cartao-pergunta").hidden = true;
+    els("nada-ainda").hidden = true;
+    // OS TRÊS "NÃO SEI" SÃO DIFERENTES, e a saída de cada um é outra.
+    const titulo = {
+      fora_do_mapa: "Isto o sistema ainda não guarda.",
+      sem_alcance: "Você não alcança nenhuma obra por aqui.",
+      consulta_recusada: "Entendi a pergunta, mas não consegui montar a conta.",
+    }[r.tipo] || "Não sei responder isto ainda.";
+    els("leitura").innerHTML = `
+      <div class="aviso erro" style="margin-top:10px"><b>${escapar(titulo)}</b>
+        ${escapar(r.recado || "")}
+        ${r.entendi ? `<br><small>Eu tinha entendido: ${escapar(r.entendi)}</small>` : ""}
+      </div>`;
+    return true;
+  }
+  const linhas = r.linhas || [];
+  desenharResposta({
+    titulo: "Resposta montada na hora",
+    frase: linhas.length
+      ? (r.caminho.entendi || "")
+      : "A consulta rodou e não encontrou nenhuma linha.",
+    colunas: colunasDasLinhas(linhas),
+    linhas,
+    // ⚑ O CAMINHO À MOSTRA. O dono não lê SQL e não deve precisar — mas
+    // precisa poder conferir se eu entendi a pergunta dele. Sem isto, um
+    // número errado chega com cara de certo e ninguém percebe.
+    observacao: "Esta resposta foi montada na hora, não é uma pergunta já "
+      + "conhecida do sistema. Onde olhei: " + (r.caminho.onde_olhei || "—")
+      + (r.caminho.filtrei ? ". Filtrei por: " + r.caminho.filtrei : "")
+      + (r.cortou ? ". Mostrei as primeiras linhas — havia mais." : "")
+      + " Confira se foi isso que você perguntou.",
+  });
+  els("leitura").innerHTML = "";
+  return true;
+}
+
 async function perguntarEscrevendo() {
   const texto = els("texto-livre").value.trim();
   if (!texto) return;
@@ -260,6 +333,17 @@ async function perguntarEscrevendo() {
       body: JSON.stringify({texto})});
     const l = d.leitura;
     if (!l.entendi) {
+      {# ⚑ A PERGUNTA NOVA NÃO MORRE MAIS AQUI (27/11/2026). Ele: *"a pergunta
+         que a gente vai fazer é algo meio que infinito (…) nessa lógica nunca
+         vai funcionar (…) se a gente não poderia construir algo dinâmico."*
+
+         O catálogo escrito à mão é tentado PRIMEIRO, logo acima: ele é exato
+         e não custa IA. O que ele não conhece desce para cá, onde a consulta
+         é montada na hora contra o mapa do Pessoal. A ambígua também desce —
+         foi justamente uma "ambígua" com duas opções sem relação nenhuma que
+         fez ele perguntar isto. #}
+      const respondeu = await tentarMontarNaHora(texto, l);
+      if (respondeu) { b.disabled = false; b.textContent = "Perguntar"; return; }
       // Deixar a resposta ANTERIOR na tela enquanto se diz "não entendi" é o
       // pior dos dois mundos: a pessoa lê a recusa e vê um número embaixo, e
       // acha que o número é a resposta da pergunta que ela acabou de fazer.

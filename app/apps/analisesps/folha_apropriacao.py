@@ -211,6 +211,22 @@ def obra_com_mais_dias(dias_uteis) -> dict:
     return {"obra": melhor, "dias": contagem[melhor]}
 
 
+def _como_data(valor):
+    """A data de admissão como `date` — aceita date, "AAAA-MM-DD" e "DD/MM/AAAA";
+    None quando vazia ou ilegível (e aí nada é cortado)."""
+    if isinstance(valor, dt.datetime):
+        return valor.date()
+    if isinstance(valor, dt.date):
+        return valor
+    texto = str(valor or "").strip()[:10]
+    for formato in ("%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return dt.datetime.strptime(texto, formato).date()
+        except ValueError:
+            continue
+    return None
+
+
 def _dias_uteis_do_ponto(dias, ini, fim) -> list:
     """Os dias COM obra dentro do período, já resolvidos. Ordenados por data."""
     saida = []
@@ -220,7 +236,11 @@ def _dias_uteis_do_ponto(dias, ini, fim) -> list:
             continue
         resolvido = obra_do_dia(dia.get("marcacoes"), dia.get("presenca", ""),
                                dia.get("falta", ""))
-        saida.append({"data": data, **resolvido})
+        # O PESO (27/11/2026, o 13º): na folha do mês todo dia vale 1. No 13º cada
+        # MÊS vale o mesmo (os avos), e o dia vale 1/dias do mês — ou o mês inteiro
+        # é uma entrada só, quando veio do relatório anual (`ponto_anual`).
+        saida.append({"data": data, **resolvido, "peso": dia.get("peso", 1),
+                      "mes_inteiro": bool(dia.get("mes_inteiro"))})
     return sorted(saida, key=lambda d: d["data"])
 
 
@@ -268,22 +288,26 @@ def apropriar_pelo_ponto(valor, dias_uteis) -> dict:
             ordem.append(dia["obra"])
         dias_por_obra[dia["obra"]].append(dia)
 
-    pesos = [len(dias_por_obra[o]) for o in ordem]
+    # O peso de cada obra é a SOMA dos pesos dos seus dias — o número de dias na
+    # folha do mês (peso 1); os avos, no 13º.
+    pesos = [sum(Decimal(str(d.get("peso", 1))) for d in dias_por_obra[o]) for o in ordem]
     valores = _repartir(total, pesos)
 
     por_obra = []
     por_dia = []
-    for obra, quantos, parte in zip(ordem, pesos, valores):
+    for obra, peso, parte in zip(ordem, pesos, valores):
+        quantos = len(dias_por_obra[obra])
         por_obra.append({"obra": obra, "dias": quantos, "valor": parte,
                          "origem": DO_PONTO})
         # Dentro da obra, o valor é dividido igualmente entre os dias dela; a
         # sobra fica no primeiro dia, que é o único critério que não precisa de
         # explicação.
-        dentro = _repartir(parte, [1] * quantos)
+        dentro = _repartir(parte, [Decimal(str(d.get("peso", 1))) for d in dias_por_obra[obra]])
         for dia, valor_dia in zip(dias_por_obra[obra], dentro):
             por_dia.append({"data": dia["data"], "obra": obra,
                             "obra_ponto": dia["obra"], "valor": valor_dia,
-                            "origem": DO_PONTO, "empate": dia["empate"]})
+                            "origem": DO_PONTO, "empate": dia["empate"],
+                            "mes_inteiro": dia.get("mes_inteiro", False)})
     por_dia.sort(key=lambda d: d["data"])
     return {"por_obra": por_obra, "por_dia": por_dia, "dias": len(com_obra)}
 
@@ -541,11 +565,33 @@ def apropriar(linhas, dias_por_cpf=None, regras_por_cpf=None,
             sem_cadastro.append(pendente)   # o MESMO objeto, não uma cópia
             continue
         cpf = cadastro["cpf"]
+        # ⚠️ SÓ O PONTO DESDE A ADMISSÃO (dono, 27/11/2026): *"ele trabalhou 3 meses
+        # no início do ano e foi admitido em outubro (…) só vai considerar para ele o
+        # ponto de outubro em diante. Obras anteriores a isso não considera, mesmo
+        # que tenha ponto (…) só importa o período que ele estava de carteira
+        # assinada"*. Vale em toda folha: o dia antes da admissão (outro vínculo,
+        # diarista, prestador) não reparte o salário desta. O mês inteiro do
+        # relatório anual (13º) conta a partir do MÊS da admissão. Sem a data no
+        # cadastro, nada é cortado.
+        admissao = _como_data(cadastro.get("admissao"))
+        uteis = _dias_uteis_do_ponto(dias_por_cpf.get(cpf), ini, fim)
+        antes = []
+        if admissao:
+            def _depois(d):
+                if d.get("mes_inteiro"):
+                    return (d["data"].year, d["data"].month) >= (admissao.year, admissao.month)
+                return d["data"] >= admissao
+            antes = [d for d in uteis if not _depois(d)]
+            uteis = [d for d in uteis if _depois(d)]
         pessoa = apropriar_pessoa(
-            linha,
-            _dias_uteis_do_ponto(dias_por_cpf.get(cpf), ini, fim),
-            regras_por_cpf.get(cpf), ajustes_por_cpf.get(cpf))
+            linha, uteis, regras_por_cpf.get(cpf), ajustes_por_cpf.get(cpf))
         pessoa["cpf"] = cpf
+        pessoa["admissao"] = admissao
+        pessoa["dias_antes_da_admissao"] = sum(1 for d in antes if d.get("obra"))
+        if pessoa["dias_antes_da_admissao"]:
+            pessoa.setdefault("criticas", []).append(
+                f"{pessoa['dias_antes_da_admissao']} registro(s) de ponto antes da admissão "
+                f"({admissao:%d/%m/%Y}) não entram no rateio.")
         pessoa["pendente_cadastro"] = False
         # O nome do CADASTRO manda no arquivo de pagamento: é o que o banco
         # confere contra o CPF. O da contabilidade fica para a conferência.

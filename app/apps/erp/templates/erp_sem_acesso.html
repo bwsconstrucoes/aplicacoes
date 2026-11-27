@@ -21,6 +21,28 @@
 <body>
 <main class="entrada">
   <div class="cartao-recado">
+    {# ⚑ DUAS RECUSAS DIFERENTES (27/11/2026), e confundi-las custa caro: uma é
+       "esta tela não é sua", a outra é "você ainda não foi liberado". Desde
+       que o acesso deixou de vir do cargo, quem não tem perfil cadastrado não
+       abre NADA — e mandar essa pessoa "voltar ao início" seria mandá-la para
+       outra recusa. #}
+    {% if sem_perfil %}
+    <div class="marca">
+      <div class="brasao">BWS</div>
+      <div>
+        <h1>Seu acesso ainda não foi liberado</h1>
+        <p class="sub">Você está cadastrado, mas ainda sem perfil de acesso.</p>
+      </div>
+    </div>
+    <div class="aviso alerta">Não foi um erro do sistema, e você não perdeu
+      nada. Falta alguém definir <b>o que</b> você acessa.</div>
+    <p>Peça a um <b>administrador</b> ou ao <b>DP</b> para escolher o seu
+      perfil de acesso em <b>Configurações › Operadores</b>. É um minuto de
+      trabalho, e aí tudo o que for do seu perfil passa a abrir.</p>
+    <p style="margin-top:18px">
+      <a class="btn" href="{{ url_for('erp.sair') }}">Sair</a>
+    </p>
+    {% else %}
     <div class="marca">
       <div class="brasao">BWS</div>
       <div>
@@ -37,6 +59,7 @@
       <a class="btn" href="{{ url_for('erp.pagina_inicio') }}">Voltar ao início</a>
       <a class="btn secundario" href="{{ url_for('erp.sair') }}" style="margin-left:8px">Sair</a>
     </p>
+    {% endif %}
   </div>
 </main>
 </body>

@@ -51,7 +51,13 @@
   {% elif ultima and not ultima.ok %}
     <p class="cartao-dica"><b class="ruim">A última tentativa falhou</b>
       ({{ ultima.fim|momento_br }}){% if ultima.mensagem %}: {{ ultima.mensagem }}{% endif %}.
-      Erro 401 ou 403: as credenciais do Mobponto estão sendo recusadas.</p>
+      {# 27/11/2026: a frase das credenciais era FIXA e aparecia em toda falha —
+         inclusive quando o Mobponto aceitou a credencial e só devolveu a lista
+         vazia, o que mandou o dono procurar o problema no lugar errado. Agora só
+         aparece quando a falha É a credencial recusada. #}
+      {% if ultima.mensagem and ('recusou a credencial' in ultima.mensagem or 'HTTP 401' in ultima.mensagem or 'HTTP 403' in ultima.mensagem) %}
+        As credenciais do Mobponto estão sendo recusadas (erro 401 ou 403).
+      {% endif %}</p>
   {% elif ultima %}
     <p class="cartao-dica">Última importação concluída em {{ ultima.fim|momento_br }}{% if ultima.disparo %} por {{ ultima.disparo }}{% endif %}{% if not cargas and ultima.mensagem %} — {{ ultima.mensagem }}; não há competência gravada{% endif %}.</p>
   {% elif andando.interrompida %}

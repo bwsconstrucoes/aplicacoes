@@ -170,8 +170,8 @@
       <b>{{ criticas.pendentes|length }} sem correspondência no cadastro</b>
       <span class="lat-valor">{{ criticas.total_pendente|moeda }}</span>
       <small>Sem código Fortes no cadastro não há CPF, e sem CPF não há
-        pagamento. Preencha o código na coluna BU de "Dados Documentos" e
-        clique em "Atualizar cadastro".</small>
+        pagamento. Preencha o "ID Fortes" no cadastro do colaborador no ERP
+        (entra sozinho em até 15 minutos, ou na hora pelo "Atualizar cadastro").</small>
     </a>
   {% endif %}
   {% if criticas and criticas.sairam %}
@@ -425,18 +425,39 @@
    "precisam de olho" não dizia o que a coisa fazia. Este bloco é CURTO de
    propósito: ele aponta e a lista resolve, porque a decisão é por pessoa.
    ------------------------------------------------------------------------ #}
+{% if recado %}<div class="aviso">{{ recado }}</div>{% endif %}
 {% if montado.ponto.do_ano %}
   {# O 13º SE RATEIA PELO PONTO DO ANO (25/11/2026) — `folha_apropriacao.periodo_do_pagamento`. #}
   <div class="aviso">
-    <b>13º salário:</b> cada pessoa é dividida entre as obras pelos dias de ponto de
-    {{ montado.ponto.periodo[0]|data_br }} a {{ montado.ponto.periodo[1]|data_br }}.
-    Férias, atestado e feriado não contam; quem não bate ponto segue a regra de rateio.
+    <b>13º salário:</b> cada pessoa é dividida entre as obras pelo ponto de
+    {{ montado.ponto.periodo[0]|data_br }} a {{ montado.ponto.periodo[1]|data_br }},
+    <b>cada mês trabalhado valendo o mesmo</b> (como os avos do 13º): no mês com ponto dia a
+    dia, o mês se divide entre as obras pelos dias; no mês que só está no relatório anual de
+    presenças, vale a obra daquele mês. Férias, atestado e feriado não contam; quem não bate
+    ponto segue a regra de rateio.
+    {% if montado.ponto.meses_do_relatorio %}
+      <br><b>Pelo relatório anual de presenças:</b> {{ montado.ponto.meses_do_relatorio|join(', ') }}
+      {% if montado.ponto.relatorio_anual %}<span class="cartao-dica">(importado
+        {{ montado.ponto.relatorio_anual.importado_em[:10]|replace('-', '/') }}{% if montado.ponto.relatorio_anual.por %} por {{ montado.ponto.relatorio_anual.por }}{% endif %},
+        {{ montado.ponto.relatorio_anual.pessoas }} pessoas)</span>{% endif %}.
+    {% endif %}
   </div>
   {% if montado.ponto.meses_sem_ponto %}
     <div class="aviso erro"><b>Sem ponto carregado em {{ montado.ponto.meses_sem_ponto|join(', ') }}.</b>
       Esses meses ficam fora do rateio do 13º — a obra em que a pessoa trabalhou neles não recebe
-      a parte dela. Carregue-os em <a href="{{ url_for('analisesps.tela_folha_ponto') }}">Ponto</a>
-      (alguns minutos cada; fora do horário de bater ponto) antes de gerar o pagamento.</div>
+      a parte dela. Carregue-os em <a href="{{ url_for('analisesps.tela_folha_ponto') }}">Ponto</a>,
+      ou envie abaixo o relatório anual de presenças do Mobponto.</div>
+  {% endif %}
+  {% if pode_operar %}
+    {# O RELATÓRIO ANUAL DE PRESENÇAS (27/11/2026) — `ponto_anual.py`. O Mobponto
+       parou de devolver os meses antigos pela API depois do pedido de cancelamento. #}
+    <form method="post" enctype="multipart/form-data" class="form-ponto-anual"
+          action="{{ url_for('analisesps.folha_ponto_anual', folha_id=folha.id) }}">
+      <label class="rotulo-campo">Relatório "Presenças por Locais (Anual)" do Mobponto
+        {% if montado.ponto.relatorio_anual %}— enviar de novo substitui o anterior{% endif %}</label>
+      <input type="file" name="arquivo" accept=".xls,.html,.htm" required>
+      <button class="btn secundario" type="submit">Enviar o relatório anual</button>
+    </form>
   {% endif %}
 {% elif not montado.ponto.tem_carga %}
   <div class="aviso erro">
@@ -546,6 +567,20 @@
   {% for o in (montado.obras + obras_c_diarios)|unique|sort %}<option value="{{ o }}"></option>{% endfor %}
 </datalist>
 
+{# AGRUPAR A LISTA (27/11/2026): por obra da contabilidade, do ponto, do cadastro
+   ou conta de pagamento. Só arruma as linhas — filtros, totais e pagamento iguais. #}
+{% set args_sem_agrupar = request.args.to_dict(flat=false) %}
+{% if 'agrupar' in args_sem_agrupar %}{% set _ = args_sem_agrupar.pop('agrupar') %}{% endif %}
+{% if folha and montado.grupos is defined %}
+<div class="folha-agrupar">
+  <span class="cartao-dica">Agrupar por:</span>
+  <a class="{{ 'ativo' if not montado.agrupar }}" href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, **args_sem_agrupar) }}">nada (ordem alfabética)</a>
+  {% for chave, rotulo in agrupamentos.items() %}
+    <a class="{{ 'ativo' if montado.agrupar == chave }}" href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, agrupar=chave, **args_sem_agrupar) }}">{{ rotulo }}</a>
+  {% endfor %}
+  {% if montado.agrupar %}<button type="button" class="btn secundario btn-pequeno" id="grupos-recolher">recolher todos</button>{% endif %}
+</div>
+{% endif %}
 {# As etiquetas "nas outras folhas" de cada pessoa (05/11/2026). #}
 {% if folha %}{% with ano=folha.ano, mes=folha.mes, tela="importar" %}{% include "_outras_folhas.html" %}{% endwith %}{% endif %}
 <div class="tabela-wrap">
@@ -564,6 +599,9 @@
              arquivo; e na mesma linha das obras do ponto e do cadastro, para
              confrontar as três. #}
           <th>Contabilidade</th>
+          {# A ADMISSÃO (27/11/2026): o rateio só usa o ponto a partir dela, e ele
+             confere a data ao lado do valor. A do cadastro completado pelo ERP. #}
+          <th>Admissão</th>
           <th>Fase Atual</th>
           <th>Obra — do ponto</th>
           {# SEMPRE AO LADO DA DO PONTO, para confrontar (pedido dele, 30/09/2026):
@@ -581,11 +619,20 @@
         </tr>
       </thead>
       <tbody>
-      {% for p in montado.pessoas %}
+      {% for g in montado.grupos %}
+      {% set n_grupo = loop.index %}
+      {% if g.titulo %}
+        <tr class="linha-grupo" data-grupo="{{ n_grupo }}">
+          <td colspan="13"><span class="seta-grupo">▾</span> <b>{{ g.titulo }}</b>
+            <span class="cartao-dica">· {{ g.quantas }} pessoa(s) · {{ g.total|moeda }}</span></td>
+        </tr>
+      {% endif %}
+      {% for p in g.pessoas %}
         {# RISCADA quando sai do pagamento — é o que o próprio desenho dizia (§7.3:
            *"continua na prévia, riscada"*), e é o que faz a lista inteira ser lida
            de relance sem contar caixinhas. #}
         <tr class="linha-pessoa {% if not p.entra %}nao-vai{% endif %} {% if p.situacao in ('sem_cadastro','sem_obra','saiu') %}linha-alerta{% endif %}"
+            {% if g.titulo %}data-no-grupo="{{ n_grupo }}"{% endif %}
             data-cpf="{{ p.cpf }}" data-nome="{{ p.nome_na_tela }}"
             data-valor="{{ p.valor }}">
           <td>
@@ -648,6 +695,8 @@
               <br><span class="cartao-dica" title="setor {{ p.setor }}">{{ p.setor_curto }}</span>
             {% endif %}
           </td>
+          <td>{% if p.admissao %}{{ p.admissao|data_br }}{% else %}<span class="cartao-dica">—</span>{% endif %}
+            {% if p.dias_antes_da_admissao %}<br><span class="cartao-dica" title="Ponto antes da admissão: não entra no rateio">{{ p.dias_antes_da_admissao }} antes, fora</span>{% endif %}</td>
           <td>{{ p.fase or '—' }}</td>
           <td>
             {% if p.obras_resumo %}
@@ -725,9 +774,9 @@
         {# A LINHA DOS DIAS, escondida até ele pedir. Fica no HTML em vez de vir
            por uma chamada nova: o dado já está montado, e uma ida ao servidor por
            pessoa faria 491 chamadas para conferir uma folha. #}
-        <tr class="dias-da-pessoa" hidden>
+        <tr class="dias-da-pessoa" hidden {% if g.titulo %}data-no-grupo-dias="{{ n_grupo }}"{% endif %}>
           <td></td>
-          <td colspan="11">
+          <td colspan="12">
             {% if p.por_dia %}
               <div class="dias-lista">
                 {% for d in p.por_dia %}
@@ -816,11 +865,13 @@
             {% endif %}
           </td>
         </tr>
-      {% else %}
-        <tr><td colspan="12" class="cartao-dica">
+      {% endfor %}
+      {% endfor %}
+      {% if not montado.pessoas %}
+        <tr><td colspan="13" class="cartao-dica">
           Nenhum colaborador encontrado com esses filtros.
         </td></tr>
-      {% endfor %}
+      {% endif %}
       </tbody>
     </table>
   </div>
@@ -1849,4 +1900,34 @@ if (botaoFechar) botaoFechar.addEventListener("click", async () => {
 recontar();
 </script>
 {% endif %}
+
+<style>
+  .folha-agrupar { display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; margin:6px 0 8px; }
+  .folha-agrupar a { padding:2px 8px; border-radius:999px; text-decoration:none; border:1px solid var(--borda); }
+  .folha-agrupar a.ativo { background:var(--azul); color:#fff; border-color:var(--azul); }
+  #tabela-folha tr.linha-grupo td { background:#EEF3F8; cursor:pointer; }
+  #tabela-folha tr.linha-grupo.recolhido .seta-grupo { display:inline-block; transform:rotate(-90deg); }
+</style>
+<script>
+(() => {
+  // Clicar no título do grupo recolhe/abre as linhas dele (27/11/2026).
+  const tabela = document.getElementById("tabela-folha");
+  if (!tabela) return;
+  const alternar = (cab, recolher) => {
+    const n = cab.dataset.grupo;
+    const fechar = recolher === undefined ? !cab.classList.contains("recolhido") : recolher;
+    cab.classList.toggle("recolhido", fechar);
+    tabela.querySelectorAll(`tr[data-no-grupo="${n}"]`).forEach(tr => { tr.hidden = fechar; });
+    // a linha dos dias aberta de quem está no grupo fecha junto (e não reabre sozinha)
+    if (fechar) tabela.querySelectorAll(`tr[data-no-grupo-dias="${n}"]`).forEach(tr => { tr.hidden = true; });
+  };
+  tabela.querySelectorAll("tr.linha-grupo").forEach(cab => cab.addEventListener("click", () => alternar(cab)));
+  const todos = document.getElementById("grupos-recolher");
+  if (todos) todos.addEventListener("click", () => {
+    const recolher = todos.textContent.includes("recolher");
+    tabela.querySelectorAll("tr.linha-grupo").forEach(cab => alternar(cab, recolher));
+    todos.textContent = recolher ? "abrir todos" : "recolher todos";
+  });
+})();
+</script>
 {% endblock %}

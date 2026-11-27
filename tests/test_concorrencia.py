@@ -176,8 +176,10 @@ def test_a_trava_de_linha_bloqueia_a_segunda_conexao(banco):
     with banco.connect() as ca:
         with ca.begin():
             uid = ca.execute(text(
-                "INSERT INTO usuarios (nome, email, senha_hash, perfil) "
-                "VALUES ('Trava', 'trava@teste.bws.local', :h, 'ADMIN') RETURNING id"),
+                "INSERT INTO usuarios (nome, email, senha_hash, perfil, perfil_id) "
+                "VALUES ('Trava', 'trava@teste.bws.local', :h, 'ADMIN', "
+                "        (SELECT id FROM perfis WHERE nome = 'Cargo ADMIN')) "
+                "RETURNING id"),
                 {"h": gerar_hash("senha-teste-123")}).scalar_one()
         try:
             tx = ca.begin()

@@ -782,7 +782,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 # Dentro do worker isso seguraria uma das quatro threads do
                 # gunicorn — e o gunicorn recicla o processo a cada 1000
                 # requisições, o que mataria a leitura no meio.
-                mudar_etapa("trazendo o cadastro de colaboradores")
+                mudar_etapa("trazendo o cadastro de colaboradores do ERP")
                 from . import colaboradores as _colaboradores
                 c = _colaboradores.atualizar(anotar)
                 total_linhas[0] = c.get("pessoas", 0)
@@ -792,7 +792,11 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 # rápido quanto a mais — então isto tem de estar na cara de
                 # quem apertou o botão, não no log do serviço.
                 recado_apoios[0] = (
-                    f"{c.get('pessoas', 0)} pessoa(s) no cadastro"
+                    f"{c.get('pessoas', 0)} pessoa(s) no cadastro do ERP"
+                    + (f", {c['novas']} nova(s)" if c.get("novas") else "")
+                    + (f", {c['mudaram']} com mudança" if c.get("mudaram") else "")
+                    + (f", {c['tiradas']} retirada(s) (não estão mais no ERP)"
+                       if c.get("tiradas") else "")
                     + (f", {c['com_id_fortes']} com o código do Fortes"
                        if c.get("com_id_fortes") else "")
                     + (f", {c['ignoradas']} linha(s) sem CPF válido"
@@ -1200,6 +1204,8 @@ def manter_fresco() -> dict:
     try:
         # As planilhas de apoio, de hora em hora, na pista delas (31/10/2026).
         apoios_se_preciso("tela aberta")
+        # O cadastro do ERP, de 15 em 15 minutos, na pista dele (27/11/2026).
+        cadastro_se_preciso("tela aberta")
         if estado()["rodando"]:
             return {"disparou": False, "motivo": "já está rodando"}
         minutos = _minutos_desde_a_ultima_sincronizacao()
@@ -1224,6 +1230,22 @@ def apoios_se_preciso(disparo: str = "tela aberta") -> dict:
         return {"disparou": bool(r.get("ok"))}
     except Exception:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou disparar as planilhas de apoio")
+        return {"disparou": False}
+
+
+def cadastro_se_preciso(disparo: str = "tela aberta") -> dict:
+    """O cadastro de colaboradores DO ERP, sozinho, a cada 15 minutos (27/11/2026) —
+    na pista "cadastro", à parte das SPs (o botão "Atualizar" continua só com as
+    SPs, decisão de 31/10/2026). A planilha foi desativada; as telas de pagamento
+    leem a cópia que o ERP enche (`colaboradores.atualizar_do_erp`). Nunca levanta."""
+    try:
+        from . import colaboradores
+        if estado("cadastro")["rodando"] or not colaboradores.erp_precisa_atualizar():
+            return {"disparou": False}
+        r = disparar("colaboradores", disparo=disparo)
+        return {"disparou": bool(r.get("ok"))}
+    except Exception:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou disparar o cadastro do ERP")
         return {"disparou": False}
 
 

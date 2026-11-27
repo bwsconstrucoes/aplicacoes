@@ -98,8 +98,9 @@ def test_o_perfil_pronto_responde_igual_ao_cargo_antigo(sessao_real, cargo):
 
 
 def test_todo_operador_saiu_da_migracao_com_um_perfil(sessao_real):
-    """Ninguém pode ficar sem perfil: sem perfil, vale o cargo antigo, e a
-    tela do dono deixaria de mandar naquela pessoa sem nada avisar."""
+    """Ninguém pode ficar sem perfil — e desde 27/11/2026 o motivo é mais
+    duro: sem perfil a pessoa **não entra no sistema**. Antes ela caía no cargo
+    antigo, e a tela do dono deixava de mandar nela sem nada avisar."""
     s = sessao_real
     u = _pessoa(s, "sem-perfil-ainda", P.LANCADOR)
     s.execute(text("UPDATE usuarios u SET perfil_id = p.id FROM perfis p "
@@ -148,13 +149,30 @@ def test_perfil_sem_secao_nenhuma_nao_abre_nem_a_porta(sessao_real):
     assert pode_com_banco(s, u, "lancar") is False
 
 
-def test_sem_perfil_apontado_vale_o_cargo(sessao_real):
-    """A janela entre publicar e apertar o botão: quem ainda não tem perfil
-    continua funcionando pelo cargo, como antes."""
+def test_sem_perfil_apontado_a_pessoa_nao_pode_nada(sessao_real):
+    """⚑ VIROU AO CONTRÁRIO EM 27/11/2026, a pedido dele.
+
+    Antes este teste dizia que quem não tinha perfil "continuava funcionando
+    pelo cargo". Ele chamou isso de gambiarra e deu a regra: *"se o cara não
+    fez o cadastramento, ponto final, ele não tem absolutamente acesso a nada,
+    ele é apenas um colaborador cadastrado."*
+
+    ⚠️ A pessoa é criada por SQL direto de propósito: o `conftest` cola um
+    perfil equivalente ao cargo em quem for gravado pelo ORM, justamente para
+    os outros 109 arquivos de teste não precisarem saber disto.
+    """
+    from sqlalchemy import text
+
     s = sessao_real
-    u = _pessoa(s, "so-cargo", P.FINANCEIRO)
-    assert acoes_do_perfil_no_banco(s, u.id) is None
-    assert pode_com_banco(s, u, "pagar") is True
+    uid = s.execute(text(
+        "INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo) "
+        "VALUES ('Só cargo', 'so-cargo@teste.bws.local', 'x', 'FINANCEIRO', true) "
+        "RETURNING id")).scalar()
+    s.flush()
+    assert acoes_do_perfil_no_banco(s, uid) == set()
+    u = s.get(Usuario, uid)
+    assert pode_com_banco(s, u, "pagar") is False
+    assert pode_com_banco(s, u, "ver_erp") is False
 
 
 def test_a_marcacao_na_pessoa_ainda_vence_o_perfil(sessao_real):
@@ -247,8 +265,10 @@ def test_secao_ou_nivel_inventado_e_recusado(sessao_real):
 
 
 def test_nao_se_arquiva_perfil_com_gente_dentro(sessao_real):
-    """Arquivar com gente dentro devolveria essas pessoas ao cargo antigo —
-    ou seja, daria de volta o acesso que o dono acabou de tirar."""
+    """Arquivar com gente dentro **tiraria o acesso dessas pessoas de uma vez**
+    — elas ficariam sem perfil, e sem perfil não se entra em lugar nenhum
+    (27/11/2026). Antes o estrago era o oposto: voltavam ao cargo antigo, com
+    o acesso que o dono acabou de tirar."""
     s = sessao_real
     perfil = svc.criar(s, {"nome": "Perfil povoado",
                            "secoes": {"fin_lancar": cat.EDITAR}}, None)
@@ -323,3 +343,26 @@ def test_quem_tem_suprimentos_continua_vendo_suprimentos(sessao_real, app_real):
     assert cliente.get("/erp/suprimentos").status_code == 200
     pagina = cliente.get("/erp/suprimentos").get_data(as_text=True)
     assert "Suprimentos" in _modulos_do_menu(pagina)
+
+
+@pytest.mark.banco
+def test_a_marcacao_do_portal_vai_e_volta_no_cadastro(sessao_real):
+    """A caixa "esta gente trabalha na obra" grava, lê e muda (migração 130).
+
+    Ela decide por qual PORTA a pessoa entra — portal ou telas de dentro — e
+    não o que ela pode fazer. Até 27/11/2026 quem decidia isso era o cargo, e
+    o dono mandou tirar: *"o cargo base não deveria influenciar em nada."*
+    """
+    s = sessao_real
+    escritorio = svc.criar(s, {"nome": "Escritório do teste",
+                               "secoes": {"fin_lancar": cat.EDITAR}}, None)
+    assert escritorio["entra_pelo_portal"] is False
+
+    obra = svc.criar(s, {"nome": "Obra do teste", "entra_pelo_portal": True,
+                         "secoes": {"obr_diario": cat.EDITAR}}, None)
+    assert obra["entra_pelo_portal"] is True
+
+    virado = svc.editar(s, obra["id"], {"entra_pelo_portal": False}, None)
+    assert virado["entra_pelo_portal"] is False
+    # e as seções não se perdem ao mexer só na porta
+    assert virado["secoes"] == {"obr_diario": cat.EDITAR}

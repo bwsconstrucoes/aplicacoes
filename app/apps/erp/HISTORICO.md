@@ -40,6 +40,102 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### 27/11/2026 (3) — (chat do DP) ⚠️ SEM PERFIL DE ACESSO, A PESSOA NÃO ENTRA EM NADA
+
+**Atravessa as quatro áreas e muda quem entra no sistema.** Relato completo em
+`HISTORICO_PESSOAL.md`, 27/11/2026 (4).
+
+Regra dele, sem meio-termo: *"se o cara não fez o cadastramento, ponto final,
+ele não tem absolutamente acesso a nada, ele é apenas um colaborador
+cadastrado (…) até então, absolutamente tudo bloqueado."* O cargo antigo
+**deixou de conceder acesso**.
+
+| Situação | O que vale |
+|---|---|
+| tabela de perfis ausente, ou pessoa não encontrada | o cargo — a rede entre publicar e aplicar a migração |
+| pessoa existe e **sem perfil** | **nada**, nem o portal |
+| ADMIN sem perfil | só entrar, Configurações e Operadores (`PROTEGIDAS_DO_ADMIN`) |
+
+⚠️ **AO PUBLICAR:** quem estiver sem perfil perde o acesso na hora. A lista em
+Configurações › Operadores avisa em vermelho quantos são e quem são.
+
+⚠️ **AO ESCREVER TESTE COM BANCO:** não precisa fazer nada — o `conftest.py`
+cola um **perfil equivalente ao cargo** em quem for gravado sem perfil
+(`perfis_equivalentes_aos_cargos`). Para testar gente SEM perfil, grave o
+usuário por **SQL direto**, que passa por fora disso.
+
+⚠️ **APERTO DE ESCOPO NO MESMO DIA:** quem enxerga "só os próprios
+lançamentos" abria o detalhe de **qualquer obra**; agora abre só as obras
+marcadas no cadastro dela. Obra não tem autor, então o único recorte possível
+é a própria obra (`pode_ver_obra`).
+
+### 27/11/2026 (2) — (chat do DP) O CARGO BASE NÃO MANDA MAIS; e a tela de Operadores foi repaginada
+
+**Atravessa as quatro áreas.** Mexe na guarda que roda antes de TODA rota, no
+menu, no catálogo de seções e no cadastro do operador — que é o mesmo
+formulário usado pela tela de Operadores e pela ficha da pessoa em Pessoal.
+Relato completo em `HISTORICO_PESSOAL.md`, 27/11/2026 (2) e (3).
+
+**A mudança de regra**, pedida por ele (*"o cargo base não deveria influenciar
+em nada. quem deve mandar é o perfil"*): quem tem **perfil de acesso**
+cadastrado tem tudo decidido pelo perfil — inclusive entrar pelo portal ou
+pelas telas de dentro. O **cargo** só vale para quem **não tem perfil nenhum**,
+e some sozinho quando todos tiverem. "Entrar pelo portal" virou uma **marcação no
+perfil** (migração **130**): *"Esta gente trabalha na obra: entra pelo
+portal"*. Deduzir pela permissão NÃO serve, e está registrado por quê — o
+portal lista colaboradores e abre solicitação ao DP, então quem é da obra
+precisa dessas permissões para usá-lo.
+
+⚠️ **MIGRAÇÃO 130 — apertar "Aplicar atualizações do banco" no mesmo momento
+da junção.** Enquanto ela não roda, ninguém entra pelo portal.
+
+⚠️ **AO MEXER EM PERMISSÃO, saiba que `so_portal(cargo)` não é mais a
+pergunta.** A pergunta é `permissoes.entra_pelo_portal(s, usuario_id, cargo)`.
+
+**A repaginação** (mesmo dia, pedido dele): o cadastro do operador virou quatro
+abas (Quem é · O que faz · Onde faz · Limites), passou a mostrar **"o que esta
+pessoa vê quando entra"**, e o cadastro de perfil passou a ser agrupado **pelo
+menu do ERP**, com o nome das telas que cada marcação abre, níveis em botão
+colorido e "o módulo todo" em um clique.
+
+**Arquivos compartilhados mexidos:** `routes.py`, `core/auth/permissoes.py`,
+`core/auth/secoes.py`, `templates/erp_config.html`,
+`templates/erp_operador_form.html`, `static/erp.css`.
+
+### 27/11/2026 — (chat do DP) AUTORIZAÇÃO: a tela passa a abrir para quem tem o trabalho dela
+
+**Atravessa as quatro áreas — está aqui por isso.** Mexe em
+`core/auth/permissoes.py` (a `ACOES_IMPLICADAS`), que decide quem entra em
+toda tela do ERP. O relato completo, com os números e o que ficou de fora,
+está em `HISTORICO_PESSOAL.md`, 27/11/2026.
+
+**O defeito:** **8 telas não abriam para quem tinha justamente o trabalho
+delas**, por **17 marcações** diferentes — quem podia "Cadastrar e editar
+colaboradores" não abria Pessoal; quem podia "Fechar e reabrir o mês do ponto"
+não abria o Ponto. Sem erro na tela: a área não existia no menu.
+
+**A causa:** há três caminhos que concedem ação, e só um passa pela seção. O
+**perfil cadastrado** sempre deu o "só olhar" junto com o "olhar e mexer"
+(`secoes.acoes_do_nivel`) — nunca teve o furo. O **cargo em código** e a
+**marcação por pessoa** entregam ação solta, e a tabela de implicações estava
+escrita à mão desde 13/09/2026, com 17 pares esquecidos.
+
+**O conserto:** a tabela nasce do **catálogo de seções** — toda ação do "olhar
+e mexer" implica o "só olhar" da mesma seção. Seção nova entra certa sozinha.
+Ninguém ganha verbo novo; desmarcar à mão continua fechando (teste próprio).
+Efeito nos cargos: gestor e supervisor de obra passam a ver Suprimentos ›
+Pedidos; os outros nove não mudam.
+
+⚠️ **Ao criar seção nova em `core/auth/secoes.py`**, ponha a ação de entrada da
+tela no `ler` dela. O teste `test_toda_aba_do_menu_tem_secao_que_a_abre` cobra
+isso, e é o que garante que o dono consiga montar o perfil pela tela, sem
+código.
+
+**Pendente, e é decisão dele:** o "método mais simples" que ele pediu para a
+tela de perfis. Levantamento feito: **59 telas no menu, 28 ações de entrada**
+(marcar uma seção do Ponto abre as 15 telas do Ponto) e **8 das 39 seções não
+abrem tela nenhuma** — são permissões dentro da tela, e na tela de cadastro
+parecem área. Três saídas propostas; nada feito.
 ### ⚑ 27/11/2026 — (chat do Financeiro) O PORTAL GANHOU A ÁREA FINANCEIRO; `_gravar_lancamento` (registro entre áreas)
 
 - `core/portal.py` (`AREAS`): "Pagamentos" virou **"Financeiro"**, área-tela

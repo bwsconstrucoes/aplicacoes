@@ -474,7 +474,7 @@ document.querySelectorAll(".apagar-ferias").forEach(b =>
     html += tabela("Mudaram", "A pessoa já tinha férias cadastradas que se cruzam com estas, com datas diferentes. " +
                    "O período antigo é substituído pelo do arquivo.", d.alteradas, true);
     html += tabela("Sem cadastro", "O código do Fortes e o nome não acham ninguém no cadastro de colaboradores. " +
-                   "Não entram — confira a coluna BU da ficha e clique em \"Atualizar cadastro\".", d.sem_cadastro, false);
+                   "Não entram — confira o \"ID Fortes\" no cadastro do ERP e clique em \"Atualizar cadastro\".", d.sem_cadastro, false);
     if (d.sumiram.length) {
       html += "<h4>Não estão mais no arquivo <small>" + d.sumiram.length + "</small></h4>" +
         '<p class="cartao-dica">Importadas antes, com início no mesmo mês, e que o arquivo não traz mais ' +

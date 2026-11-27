@@ -105,9 +105,11 @@ SECOES: list[dict[str, Any]] = [
     # apontou.
     {"chave": "fin_avalizar", "area": "Financeiro", "nome": "Confirmar (aval)",
      "explicacao": "confirmar o lançamento — o primeiro dos dois passos",
+     "dentro_de": "Financeiro › Confirmar",
      "ler": [], "editar": ["avalizar"]},
     {"chave": "fin_aprovar", "area": "Financeiro", "nome": "Aprovar para pagamento",
      "explicacao": "liberar o lançamento confirmado para ser pago",
+     "dentro_de": "Financeiro › Confirmar",
      "ler": [], "editar": ["aprovar"]},
     {"chave": "fin_pagar", "area": "Financeiro", "nome": "Pagamentos",
      "explicacao": "dar baixa, desfazer baixa e ver dados bancários do credor",
@@ -121,6 +123,7 @@ SECOES: list[dict[str, Any]] = [
      "nome": "Homologar conta do credor",
      "explicacao": "conferir o titular e liberar a conta bancária do credor "
                    "para receber pagamento",
+     "dentro_de": "Financeiro › Pagamentos e Solicitações",
      "ler": [], "editar": ["homologar_conta_credor"]},
     {"chave": "fin_conciliar", "area": "Financeiro", "nome": "Conciliação e importação",
      "explicacao": "extrato do banco, conciliação e importação de planilha",
@@ -182,6 +185,7 @@ SECOES: list[dict[str, Any]] = [
      "explicacao": ("salário, diária, auxílios, Pix, banco e os documentos de "
                     "pagamento — quem não tem isto vê a pessoa, não o quanto "
                     "ela ganha"),
+     "dentro_de": "Pessoal › Colaboradores",
      "ler": ["ver_remuneracao"], "editar": []},
     # LER = abrir pedido e acompanhar o que abriu; EDITAR = atender e recusar.
     # É a divisão que o pipe fazia na mão, com um checklist chamado "você não
@@ -219,6 +223,7 @@ SECOES: list[dict[str, Any]] = [
      "nome": "Acesso ao portal",
      "explicacao": "ver (ler) ou liberar e recusar (editar) quem pediu "
                    "acesso ao portal pelo aplicativo do ponto",
+     "dentro_de": "Pessoal › Colaboradores e Configurações › Operadores",
      # 25/11/2026: ler = ver a fila (o DP); editar = liberar (o administrador).
      "ler": ["ver_pedidos_de_acesso"], "editar": ["liberar_acesso_portal"]},
     # --------------------------------------------------------- Suprimentos
@@ -274,9 +279,11 @@ SECOES: list[dict[str, Any]] = [
      "ler": ["ver_arquivo"], "editar": ["arquivar"]},
     {"chave": "ger_encaminhar", "area": "Geral", "nome": "Encaminhar informação",
      "explicacao": "mandar lançamento ou documento por WhatsApp",
+     "dentro_de": "em todo lançamento e documento",
      "ler": [], "editar": ["encaminhar"]},
     {"chave": "ger_equipe", "area": "Geral", "nome": "Trabalho da equipe",
      "explicacao": "o que cada pessoa fez no sistema",
+     "dentro_de": "Administração › Trabalho no sistema",
      "ler": ["ver_uso_da_equipe"], "editar": []},
     {"chave": "adm_configurar", "area": "Administração", "nome": "Configurações",
      "explicacao": ("plano de contas, cadastro de obras, contas bancárias, "
@@ -284,6 +291,7 @@ SECOES: list[dict[str, Any]] = [
      "ler": [], "editar": ["configurar"]},
     {"chave": "adm_operadores", "area": "Administração", "nome": "Operadores e perfis",
      "explicacao": "quem entra no sistema e o que cada um pode",
+     "dentro_de": "Administração › Configurações",
      "ler": [], "editar": ["gerir_usuarios"]},
     {"chave": "adm_mensagens", "area": "Administração", "nome": "Mensagens",
      "explicacao": ("por onde cada tipo de aviso sai (Telegram ou WhatsApp), o teto do "
@@ -335,6 +343,77 @@ def acoes_do_perfil(marcacoes: dict[str, str]) -> set[str]:
     if acoes or any(n in (LER, EDITAR) for n in (marcacoes or {}).values()):
         acoes.add(ACAO_DE_ENTRADA)
     return acoes
+
+
+def para_a_tela_pelo_menu(modulos: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """O catálogo agrupado PELO MENU DO ERP, e não por uma área escrita à mão.
+
+    ⚑ O PEDIDO, de 27/11/2026, com as palavras dele: *"a divisão dessas seções
+    tá totalmente solta, sem conexão entre cada área e cada tela"*, e logo
+    depois *"essa tela precisa de uma repaginação completa. a experiência de
+    uso dela é péssima."*
+
+    Ele estava certo, e dava para medir: a área de cada seção era um texto
+    digitado aqui ("Geral", "Administração"), que não correspondia aos módulos
+    que ele vê em cima da tela. "Notas emitidas" aparecia em **Obras** no
+    cadastro e em **Financeiro** no menu. "Mensagens" é módulo no menu e era
+    uma linha de Administração aqui. E nada dizia QUAIS TELAS cada seção abre —
+    então marcar era chute.
+
+    Agora quem agrupa é o menu: a seção fica no módulo das telas que ela abre,
+    e cada linha mostra os nomes dessas telas. Seção que **não abre tela** (o
+    aval, a aprovação, o salário, o acesso ao portal…) sai da lista de telas e
+    vai para um bloco próprio, "o que ela libera DENTRO da tela" — porque
+    tratá-la como se fosse uma área é justamente o que embaralhava a tela.
+
+    `modulos` chega de fora (`routes.MODULOS` + a ação de entrada de cada aba)
+    para este arquivo não precisar importar as rotas — ele é carregado pela
+    guarda que roda antes de TODA rota, e uma importação circular aí derrubaria
+    o ERP inteiro.
+    """
+    # ação de entrada → (ordem do módulo, nome do módulo, nomes das telas)
+    onde: dict[str, tuple[int, str, list[str]]] = {}
+    for i, m in enumerate(modulos):
+        for tela in m["telas"]:
+            registro = onde.setdefault(tela["acao"], (i, m["nome"], []))
+            registro[2].append(tela["nome"])
+
+    quantas_no_modulo = {m["nome"]: len(m["telas"]) for m in modulos}
+    grupos: dict[str, dict[str, Any]] = {}
+    for s in SECOES:
+        # A ação de entrada de uma tela pode estar no "só olhar" OU no "olhar e
+        # mexer": Pagamentos, Conciliação, Receber e Configurações são telas
+        # cujo ingresso é o próprio verbo.
+        portas = [a for a in (*s["ler"], *s["editar"]) if a in onde]
+        if portas:
+            i, modulo, _ = onde[portas[0]]
+            abre: list[str] = []
+            for a in portas:
+                for nome in onde[a][2]:
+                    if nome not in abre:
+                        abre.append(nome)
+            destino = "telas"
+            linha = {"abre": abre,
+                     # Marcar UMA seção do Ponto abre as 15 telas do Ponto: a
+                     # tela diz isso em uma linha em vez de listar quinze.
+                     "abre_o_modulo": len(abre) == quantas_no_modulo.get(modulo)}
+        else:
+            # Seção que não abre tela nenhuma: o lugar dela é o que o catálogo
+            # declara em `dentro_de`, e é por ele que ela se agrupa.
+            dentro = s.get("dentro_de") or ""
+            modulo = (dentro.split("›")[0].strip()
+                      if "›" in dentro else "Em várias telas")
+            i = next((j for j, m in enumerate(modulos) if m["nome"] == modulo),
+                     len(modulos))
+            destino, linha = "dentro", {"dentro_de": dentro}
+        g = grupos.setdefault(modulo, {"modulo": modulo, "ordem": i,
+                                       "telas": [], "dentro": []})
+        g["ordem"] = min(g["ordem"], i)
+        g[destino].append({"chave": s["chave"], "nome": s["nome"],
+                           "explicacao": s["explicacao"],
+                           "ler": sorted(s["ler"]), "editar": sorted(s["editar"]),
+                           **linha})
+    return sorted(grupos.values(), key=lambda g: g["ordem"])
 
 
 def para_a_tela() -> list[dict[str, Any]]:

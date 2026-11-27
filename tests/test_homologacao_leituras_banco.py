@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import pytest
 
+from app.apps.erp.core.auth.permissoes import decidir
 from homologacao import (  # noqa: F401  (`operadores` é fixture, usada por nome)
-    LEITURAS, PERFIS_DO_ROTEIRO, PERMISSOES, como, identificacao,
+    ACOES_POR_PERFIL, LEITURAS, PERFIS_DO_ROTEIRO, como, identificacao,
     operadores)
 
 pytestmark = pytest.mark.banco
@@ -34,7 +35,13 @@ def test_leitura_abre_ou_recusa_conforme_o_perfil(app_real, operadores, perfil, 
 
     r = c.get(caminho)
 
-    if perfil in PERMISSOES[acao]:
+    # ⚑ A EXPECTATIVA VEM DO QUE A PESSOA REALMENTE TEM (27/11/2026): o
+    # PERFIL CADASTRADO dela, passado por `decidir`. Era comparada com a
+    # tabela de cargos crua, e isso ficou errado por dois motivos no mesmo
+    # dia: a tabela não conhece as ações IMPLICADAS (quem tem o trabalho da
+    # tela abre a tela), e o cargo deixou de conceder acesso — quem manda é o
+    # perfil.
+    if decidir(perfil, acao, {}, ACOES_POR_PERFIL[perfil]):
         assert r.status_code != 403, f"{perfil.value} devia abrir {caminho}"
         assert r.status_code < 500, (
             f"{caminho} quebrou (HTTP {r.status_code}) para {perfil.value} "
