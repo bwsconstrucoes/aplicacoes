@@ -12275,28 +12275,6 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
-<<<<<<< HEAD
-#### Leva 286 — 13º: o relatório anual de presenças do Mobponto cobre os meses sem ponto (27/11/2026)
-
-- **Decisão do dono, no mesmo dia:** *"vamos fazer pela planilha, pode adaptar"* — a
-  reversão foi desfeita (o código de `352b3eca` voltou). O texto abaixo conta o caminho.
-
-- Construí o uso do "Presenças por Locais - ( Anual )" do Mobponto para cobrir os meses
-  sem ponto no rateio do 13º (rateio por AVOS: cada mês trabalhado vale o mesmo; o mês sem
-  carga vai inteiro para a obra do relatório). O dono, no meio: *"só perguntando, não crie
-  nada ainda"* — e depois: *"Estou aguardando ver se o sistema Mobponto vai me
-  disponibilizar novamente as credenciais (…) fica dentro do mesmo padrão e a gente não
-  precisa mexer em nada. Se não der certo, aí a gente tenta essa alternativa."*
-- **O código ficou guardado no commit `352b3eca` e foi revertido** logo em seguida neste
-  ramo, para não ir junto numa publicação. Para trazer de volta: `git revert` do commit de
-  reversão (o seguinte a `352b3eca`), rodar `tests/test_analisesps_folha_decimo.py` e a
-  suíte. Inclui: `ponto_anual.py`, o `peso` por dia em `folha_apropriacao`, os avos em
-  `ponto.dias_do_ano`, o envio na tela do 13º e os testes (CPF/nome inventados).
-- O que se sabe do arquivo real (27/11): tabela HTML; 1.506 pessoas; UMA obra por mês,
-  sem dias; jan 892 … out 415; das 353 pessoas do 13º, 321 casam pelo nome.
-- Se o Mobponto reabrir a API depois, os meses carregados passam a valer pelo ponto dia a
-  dia (mês com carga não usa o relatório) — nada a desfazer.
-=======
 #### Leva 286 — 13º: o relatório anual de presenças do Mobponto cobre os meses sem ponto; cada mês vale o mesmo (avos) (27/11/2026)
 
 - A folha do 13º dizia *"Sem ponto carregado em 01/2026 … 08/2026"*: depois do pedido de
@@ -12326,7 +12304,12 @@ somente Solicitações de uma conta especifica"*.
   ele está. Testes com CPF/nome inventados em `test_analisesps_folha_decimo.py`.
 - Sem migração. Custo: enviar = 1 gravação; a conta do 13º lê o relatório uma vez (fica
   na memória com o ano do ponto, 10 min). Nada vai ao Mobponto nem ao Google.
->>>>>>> parent of 872fd1bd (Revert "Análise de SPs › 13º: relatório anual de presenças do Mobponto cobre os meses sem ponto; rateio por avos")
+- **Guardada e devolvida no mesmo dia.** No meio do trabalho o dono disse *"só
+  perguntando, não crie nada ainda"*, e depois que preferia esperar o Mobponto reabrir a
+  API. O commit `352b3eca` foi revertido (`872fd1bd`) para não ir numa publicação; horas
+  depois: *"vamos fazer pela planilha, pode adaptar"* — a reversão foi desfeita.
+- Se o Mobponto reabrir a API depois, os meses carregados passam a valer pelo ponto dia a
+  dia (mês com carga não usa o relatório) — nada a desfazer.
 
 #### Leva 285 — Tela do Ponto: a frase "credenciais recusadas" só quando a falha é a credencial (27/11/2026)
 
