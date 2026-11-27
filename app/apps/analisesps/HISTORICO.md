@@ -12275,6 +12275,20 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 289 — O mapa do cadastro: as colunas da planilha que o pagamento usa × o ERP (27/11/2026)
+
+- O dono: *"a planilha já está hoje desatualizada. Então, o cadastro é o ERP (…) quais
+  colunas da planilha são observadas para a montagem das telas de pagamento (…) e quais
+  campos no ERP são correspondentes (…) para definitivamente deixar de usar a planilha."*
+- Escrito em `CADASTRO_PLANILHA_X_ERP.md` (lido no código): coluna a coluna, quem usa e
+  o campo do ERP. Achados: o ERP TEM quase tudo; o `para_folha` (o que ele entrega à
+  folha) não entrega `cnpj_admissao` (separa as empresas), `recebe_gratificacao`,
+  `valor_mensal` (sai como `valor_mes`), os documentos da planilha BeeVale/SomaPay e o
+  par "Nome Credor"/"Pix CNPJ" (razão social/CNPJ PJ?). O `obra_codigo` do ERP é a obra
+  do PONTO desde 20/11 — a "obra do cadastro" da folha mudaria de sentido.
+- Nada mudou no sistema. **Pendente (dono):** as confirmações da seção "O que falta" do
+  documento, e o "pode" para a conferência cópia × ERP e a troca.
+
 #### Leva 288 — Folha: o rateio só usa o ponto DESDE A ADMISSÃO; a coluna "Admissão" na lista (27/11/2026)
 
 - O dono, olhando o 13º: *"ele trabalhou na empresa no início do ano (…) saiu e depois
