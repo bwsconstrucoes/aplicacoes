@@ -12312,6 +12312,8 @@ somente Solicitações de uma conta especifica"*.
   `test_tarefas_banco.py::test_quem_enxerga_o_sistema_inteiro_ve_a_fila_toda`.
 - Sem migração. Testes novos em `test_analisesps_colaboradores_banco.py` e
   `test_analisesps_folha_analitica.py` (ERP de verdade no banco de teste).
+- **Publicado em 27/11/2026** (sem migração). Pendente (dono): apertar "Atualizar
+  cadastro" em Colaboradores e passar os números (pessoas, sem ID Fortes, avisos).
 
 #### Leva 289 — O mapa do cadastro: as colunas da planilha que o pagamento usa × o ERP (27/11/2026)
 
