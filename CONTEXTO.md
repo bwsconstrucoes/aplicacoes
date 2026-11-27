@@ -802,6 +802,29 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 26/11/2026 — Tela que serve várias áreas: manda o ASSUNTO, não a tela
+
+Decisão do dono, em resposta a uma dúvida dele próprio: *"o portal normalmente
+envolve tudo (…) Se for do financeiro, eu trato no chat financeiro. Se for do
+DP, eu trato no chat do DP (…) mesmo que o assunto seja portal. Pode ser dessa
+forma?"* Pode — e a regra ficou escrita no `CLAUDE.md`, com a tabela de qual
+chat trata o quê, as duas exceções (a MOLDURA da tela e mover código de lugar)
+e o que a divisão deixa passar.
+
+**Por que entra aqui, e não só no histórico de uma área:** a regra vale para
+toda tela compartilhada (o portal hoje; a tela de início e o `erp_base.html`
+amanhã), e muda o comportamento de TODOS os chats.
+
+**O dado que a sustenta:** em 10 dias o `erp_portal.html` foi mexido 18 vezes
+por chats diferentes; num único dia, quatro junções da `main` com três chats no
+mesmo arquivo — e a tela se juntou sozinha nas quatro. O conflito recorrente é
+o histórico da área, não o código.
+
+**O custo conhecido, registrado junto:** ninguém cuida da tela inteira. Em
+25/11/2026 a fila de pedidos de acesso ficou um dia invisível em Configurações ›
+Operadores — a OUTRA ponta de um caminho que começa em Pessoal. Quem publicou
+conferiu só a ponta de cá.
+
 ### 26/11/2026 — A folha de diaristas lê o ERP para quem não está na planilha (atravessa ERP e Análise de SPs)
 
 A admissão deixou de ir à planilha (o dono, 25/11/2026). `analisesps/

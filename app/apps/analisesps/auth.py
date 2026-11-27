@@ -475,6 +475,9 @@ TELA_DA_ROTA = {
     "analisesps.encaminhar_contatos": ("solicitacoes", "lote"),
     "analisesps.sem_risco": ("solicitacoes",),
     "analisesps.validar": ("solicitacoes",),
+    # 26/11/2026: o pedido de cancelamento (card no Pipefy), das duas telas e da ficha.
+    "analisesps.cancelar_sp_previa": ("solicitacoes", "lote"),
+    "analisesps.cancelar_sp_confirmar": ("solicitacoes", "lote"),
     # O BeeVale e os códigos de pagamento servem as duas pontas do mesmo
     # trabalho: quem monta a lista e quem paga. Uma tela das duas basta.
     "analisesps.beevale_cadastro": ("solicitacoes", "lote"),

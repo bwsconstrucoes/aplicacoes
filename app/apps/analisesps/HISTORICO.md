@@ -12275,6 +12275,83 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 283 — "Cancelar SP" pelo sistema: o card de pedido no Pipefy, das Solicitações, do Lote e da ficha (26/11/2026)
+
+- O dono: *"um botão tanto na parte de solicitações quanto em lote, que vai ser cancelar
+  SP. E também no modal (…) junto com os botões da direita (…) Você vai criar um novo
+  card no Pipefy (…) 301426645, (…) em mutation, se tiver mais de um, para economizar
+  chamadas de API (…) antes de cancelar, abre um modal listando o que vai ser cancelado
+  (…) tem uma automação no make.com que vai terminar o trabalho."* Campos ditados:
+  `selecione_o_procedimento` = "Cancelar SP", `n_da_solicita_o` = nº da SP, `motivo` =
+  "Cancelado pelo Sistema AnaliseSPs", `colaborador_solicitante` = 620439304.
+- **A trava** (dono, no mesmo dia: *"se a solicitação de pagamento tiver com algum
+  agendamento, tiver em agendado, ou tiver pago, não permitir o cancelamento. Tem que
+  alterar primeiro o status para sem agendamento e pagar"*): só vai a SP com Status Pgt =
+  "Pagar" E o campo Agendado vazio (`cancelar_sp.bloqueio`). Paga, Pago Parcial, com
+  qualquer agendamento (Agendar, Agendado, Falha…) ou já cancelada fica de fora, e a
+  janela diz o que fazer antes ("mude para Pagar antes" / "desagende antes").
+- `cancelar_sp.py`: `previa` (credor, obra, valor, vencimento, status, agendado; as
+  travadas e as não encontradas NÃO vão; aviso "já pedido em … por …" se a SP já teve pedido) e
+  `pedir` (cria os cards e grava cada pedido no Log — `log_alteracoes`, ação "Cancelar SP",
+  status "enviado", com o número do card). NÃO muda o status da SP: quem cancela é o Make;
+  aparece "Cancelado" na sincronização seguinte.
+- `pipefy.criar_cards`: VÁRIOS cards numa mutation (apelidos), 10 por chamada; um card
+  recusado não esconde os outros. Custo: 1 ida à API a cada 10 SPs canceladas.
+- Botão "Cancelar SP" na barra (Solicitações e Lote, ao lado de Validar) e na ficha; uma
+  janela só (`abrirCancelarSP`, no `analisesps.js`). Só Operador; só SPs do recorte de
+  quem pede (o mesmo `_ids_do_pedido`).
+- ⚠️ **SUBSTITUIU** o "Cancelar SP" da ficha, que abria o formulário PÚBLICO do Pipefy
+  (`RCvCgX9c`) para preencher à mão (onde dava para escrever outro motivo). Mesmo lugar,
+  mesmo nome; agora sem digitar nada e com motivo fixo. Dito ao dono; volta se ele pedir.
+- `colaborador_solicitante` vai como LISTA (campo de conexão). Não verificado com o pipe
+  real: se for outro tipo de campo, o Pipefy recusa e a janela mostra o erro — nada é
+  criado naquela SP.
+- Sem migração. Testes: `test_analisesps_cancelar_sp.py`; três de `test_analisesps_telas.py`
+  ajustados ao botão novo.
+
+#### Leva 282 — Relatório completo do lote: o "Anexo Prestação de Conta" do Fundo Fixo entra (26/11/2026)
+
+- O dono: *"tem um tipo de solicitação de pagamento que o nome do campo é outro. O campo
+  é 'Anexo Prestação de Conta' (…) os anexos desse campo não estão sendo embutidos (…)
+  na hora que fosse baixar, ele fosse verificado também se há algum anexo nesse campo."*
+  E: *"É somente em uma circunstância (…) quando o tipo de despesa for igual a Fundo
+  Fixo."*
+- O campo NÃO está na base (a SPsBD só tem a coluna Q, "Anexo"). Na geração, as SPs de
+  tipo de despesa "Fundo Fixo" do relatório têm o card lido no Pipefy
+  (`pipefy.anexos_do_campo`, pelo RÓTULO do campo, sem acento — "Anexo Prestação de
+  Conta(s)"); os links entram como "Prestação de contas" depois do anexo da SP, sem
+  repetir link. Só lê o Pipefy. Custo: 1 ida à API a cada 20 SPs de Fundo Fixo do
+  relatório; relatório sem Fundo Fixo não vai ao Pipefy.
+- Pipefy fora do ar / sem token: o relatório sai sem esses anexos e a JANELA de geração
+  diz "atenção: não consegui conferir no Pipefy…" (não o PDF, que vai para o parceiro).
+- Não verificado: o download de um anexo real do Pipefy (link assinado do armazenamento
+  deles) — o "Anexo" da coluna Q já vem do mesmo lugar e baixa.
+- ⚠️ Caminho que morre com o Pipefy (o ERP vai substituí-lo): quando a prestação de
+  contas do Fundo Fixo for para o ERP, o anexo passa a vir de lá.
+- Sem migração. Testes em `test_analisesps_lote_relatorio_completo.py`.
+- **Publicado em 26/11/2026** (sem migração).
+
+#### Leva 281 — Relatório completo do lote: anexo .zip entra, e PDF com defeito não derruba mais (26/11/2026)
+
+- O dono: *"Não consegui gerar: code=7: malformed page tree"*, e logo depois: *"tem um
+  dos anexos que é um arquivo .zip com duas imagens"*.
+- **Duas brechas minhas (leva de 16/11):** (1) a cópia das páginas do anexo acontecia no
+  FIM, sem proteção — um PDF que abre mas tem a árvore de páginas quebrada (reproduzido:
+  ciclo na árvore, contagem errada) derrubava o relatório inteiro; (2) `_tipo_do_arquivo`
+  procurava "%PDF" no primeiro kilobyte ANTES de ver o "PK" do .zip — um .zip com um PDF
+  guardado sem compressão era aberto como PDF, o que dá exatamente "malformed page tree".
+  Não deu para confirmar, sem o arquivo, qual das duas foi a do dono.
+- **Agora:** o .zip é conferido primeiro e **aberto**: as imagens e os PDFs de dentro
+  entram, um depois do outro (até 20 arquivos; cada um com o teto de 40 MB, contra o .zip
+  que "explode"); o que não dá para embutir é listado no rótulo ("ficaram de fora: …");
+  planilha/documento do Office (que é .zip por dentro) continua de fora dizendo por quê.
+  Cada PDF tem a cópia ENSAIADA logo ao baixar; se falhar, tenta sem a otimização e, por
+  fim, as páginas legíveis entram como imagem ("o PDF tinha defeito"); nenhuma legível →
+  o anexo fica de fora com o motivo. E a cópia final, se ainda falhar, pula aquele anexo.
+- Sem migração. Testes: `test_PDF_COM_DEFEITO_nao_derruba_o_relatorio`,
+  `test_o_ZIP_com_imagens_entra_no_relatorio`.
+- **Publicado em 26/11/2026** (sem migração).
+
 #### Leva 280 — DDA: o motor refeito (rápido) e a lista em páginas de 50 (26/11/2026)
 
 - O dono: *"está muito lento (…) eu vou tentar fazer uma filtragem, aí ele demora demais
@@ -12302,6 +12379,7 @@ somente Solicitações de uma conta especifica"*.
 - O limite: SP alterada na tela (não pela sincronização) aparece no DDA em até 3 min.
 - Sem migração. Testes novos em `test_analisesps_dda.py` (o motor só compara o que pode
   casar, páginas, cruzamento guardado, busca).
+- **Publicado em 26/11/2026** (sem migração).
 
 #### Leva 279 — A folha do 13º salário: um tipo à parte, rateado pelo ponto do ano (25/11/2026) — MIGRAÇÃO 059
 
