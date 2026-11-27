@@ -12275,6 +12275,44 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 290 — O cadastro de colaboradores passa a vir do ERP; a planilha sai (27/11/2026)
+
+- O dono: *"a planilha já está hoje desatualizada (…) o cadastro é o ERP"* — e, quando
+  eu propus conferir planilha × ERP antes da troca: *"Eu não entendi ainda o que é que
+  você está falando de planilha. Se eu já disse que a planilha já está desatualizada e
+  desativada."* (A conferência saiu do plano; a troca é direta.)
+- **Como:** a cópia `analisesps.colaborador` continua sendo o que as telas leem, mas é o
+  ERP que a enche — `colaboradores.atualizar_do_erp` (lê o `para_folha` do ERP + os
+  campos que ele não manda, numa consulta; monta cada pessoa no formato da cópia pelo
+  mapa de `CADASTRO_PLANILHA_X_ERP.md`; grava só o que mudou; tira quem saiu do ERP,
+  com trava: se o ERP devolver menos de 50% da cópia, ninguém sai). O botão "Atualizar
+  cadastro" e a rotina automática (`tarefas.cadastro_se_preciso`, pela tela aberta, de 15
+  em 15 min, na pista "cadastro" — o "Atualizar" do topo continua só com as SPs,
+  decisão de 31/10) chamam isso. O leitor da planilha ficou como
+  `_atualizar_da_planilha`, sem uso.
+- **Os campos:** `fase` = ETAPA do ERP ("Concluído", "Desligado", "Cancelado"…);
+  `obra_codigo`/`obra_cadastro` = a OBRA DE CADASTRO (código e nome — não a obra do
+  ponto); `documentos` com RG, emissão, órgão, UF, mãe, sexo, endereço, e-mail e os de
+  pagamento (recebe gratificação mensal, valor do mês "1.234,56", recebe via SP, nome
+  credor = razão social PJ, Pix CNPJ = CNPJ PJ, Pix, e o CNPJ da EMPRESA DE REGISTRO como
+  "CNPJ - razão social"); ID Fortes único (o repetido fica com o primeiro, e avisa).
+- **Cancelado** (`fase_diz_cancelado`): não recebe nada (como desligado) e sai da lista
+  de ativos. Textos de "fase no Pipefy" viraram "etapa do cadastro".
+- **Também do ERP agora:** o Cadastro BeeVale (`beevale.buscar_por_cpf`, lia a aba
+  "Dados Documentos" inteira), a ficha completa da pessoa na folha
+  (`colaboradores.ficha_completa`, com os rótulos do ERP) e o "atualizar o cadastro
+  desta pessoa" (`atualizar_uma`). Avisos de "coluna BU"/"planilha" → "ID Fortes no
+  cadastro do ERP".
+- **Alcança outras áreas sem mexer no código delas:** o ponto (nome, celular, ID Fortes
+  no fechamento) e o ERP (diário: cargo; `conferencia_folha`) leem a mesma cópia —
+  registrado em `CONTEXTO.md` §9.
+- Não verificado: a carga real (quantas pessoas, quantas sem ID Fortes no ERP) — a tela
+  Colaboradores mostra depois da primeira rodada.
+- Teste pré-existente que falha também sem esta leva (área do ERP, fila de tarefas):
+  `test_tarefas_banco.py::test_quem_enxerga_o_sistema_inteiro_ve_a_fila_toda`.
+- Sem migração. Testes novos em `test_analisesps_colaboradores_banco.py` e
+  `test_analisesps_folha_analitica.py` (ERP de verdade no banco de teste).
+
 #### Leva 289 — O mapa do cadastro: as colunas da planilha que o pagamento usa × o ERP (27/11/2026)
 
 - O dono: *"a planilha já está hoje desatualizada. Então, o cadastro é o ERP (…) quais

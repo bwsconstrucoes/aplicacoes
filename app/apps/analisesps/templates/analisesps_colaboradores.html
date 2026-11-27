@@ -166,10 +166,11 @@
 <p class="cartao-dica" style="margin-bottom:14px">
   <b>Para que serve esta tela:</b> fornece à folha a categoria e o valor do
   auxílio de cada colaborador, a obra e as datas que definem o vínculo (diarista ×
-  CTPS). É um <b>espelho</b> do cadastro do Pipefy e não permite edição; correções
-  são feitas no card. <b>Clique na linha</b> para consultar a ficha e o ponto do
-  mês; o nome abre o card no Pipefy. Por padrão, a lista exibe <b>somente os
-  colaboradores ativos</b>.
+  CTPS). É um <b>espelho do cadastro do ERP</b> (desde 27/11/2026; a planilha foi
+  desativada), atualizado sozinho a cada 15 minutos, e não permite edição; correções
+  são feitas no cadastro do colaborador, no ERP. <b>Clique na linha</b> para consultar
+  a ficha e o ponto do mês. Por padrão, a lista exibe <b>somente os colaboradores
+  ativos</b>.
 </p>
 
 {% if erro %}
@@ -189,7 +190,7 @@
   <div>
     {% if cadastro.quando %}
       <b>{{ cadastro.pessoas }} colaborador(es)</b>
-      <span class="cartao-dica">importados da planilha em
+      <span class="cartao-dica">trazidos do ERP em
         {{ cadastro.quando[8:10] }}/{{ cadastro.quando[5:7] }} às
         {{ cadastro.quando[11:16] }}</span>
     {% else %}
@@ -210,8 +211,8 @@
         {# ⚠️ ANTES ESTA LINHA EXPLICAVA EPISTEMOLOGIA ("não é o estado de
            agora"), e ele respondeu *"não entendi essa pergunta"*. Agora diz o que
            FAZER: corrigir a planilha e reler. A data já está na frase de cima. #}
-        <br><span class="cartao-dica">Corrija na planilha de colaboradores e
-          clique em <b>Atualizar cadastro</b> para reimportar.</span>
+        <br><span class="cartao-dica">Corrija no cadastro do ERP e clique em
+          <b>Atualizar cadastro</b> para trazer de novo.</span>
       </div>
     {% endif %}
   </div>

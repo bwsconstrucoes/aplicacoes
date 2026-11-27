@@ -6,7 +6,7 @@ São DUAS COISAS DIFERENTES, e confundi-las é o erro que dá trabalho desfazer:
 
   1. CADASTRO — pessoas que ainda não têm cartão. Cola-se a lista de e-mails
      ou CPFs, e sai uma planilha de cadastro para subir no portal do BeeVale.
-     Não escreve em lugar nenhum: lê a planilha "Dados Documentos" e devolve
+     Não escreve em lugar nenhum: lê o cadastro (do ERP, desde 27/11/2026) e devolve
      um arquivo para baixar. É reversível por natureza — se sair errado,
      basta gerar de novo.
 
@@ -256,62 +256,24 @@ def _indice(cabecalho: list, *nomes) -> int | None:
 def buscar_por_cpf(cpfs: list) -> tuple[list, list]:
     """Os cadastros dos CPFs pedidos. Devolve (encontrados, não encontrados).
 
-    Lê a aba inteira de uma vez, e aqui isso é aceitável: são centenas de
-    linhas, não as 59 mil da SPsBD. Se um dia crescer, esta é a leitura a
-    trocar (ver a regra 1 do HISTORICO)."""
-    from .credenciais import cliente, com_retry
-
-    aba = com_retry(lambda: cliente().open_by_key(PLANILHA_DADOS)
-                    .worksheet(ABA_DADOS))
-    linhas = com_retry(aba.get_all_values)
-    if not linhas:
-        return [], list(cpfs)
-
-    cabecalho = linhas[0]
-    i_nome = _indice(cabecalho, "Nome Completo")
-    i_nascimento = _indice(cabecalho, "Data de Nascimento")
-    i_telefone = _indice(cabecalho, "Telefone Celular", "Telefone", "Celular")
-    i_cpf_num = _indice(cabecalho, "CPF Números")
-    i_cpf = _indice(cabecalho, "CPF (Cadastro de Pessoa Física)", "CPF")
-
-    faltando = [rotulo for rotulo, indice in (
-        ("Nome Completo", i_nome), ("Data de Nascimento", i_nascimento),
-        ("Telefone", i_telefone),
-        ("CPF", i_cpf_num if i_cpf_num is not None else i_cpf),
-    ) if indice is None]
-    if faltando:
-        raise ErroDoBeeVale(
-            "A planilha \"Dados Documentos\" está sem estas colunas: "
-            + ", ".join(faltando)
-            + ". Alguém renomeou o cabeçalho — conserte lá, não aqui.")
-
-    def celula(linha, indice):
-        if indice is None or indice >= len(linha):
-            return ""
-        return str(linha[indice]).strip()
-
-    procurados = set(cpfs)
+    ⚑ DESDE 27/11/2026 VEM DO CADASTRO DO ERP (pela cópia que o ERP enche — ver
+    `colaboradores.atualizar_do_erp`). Antes lia a aba "Dados Documentos" inteira,
+    que o dono desativou: *"a planilha já está hoje desatualizada (…) o cadastro é o
+    ERP."* Nome, data de nascimento e celular: os mesmos três campos."""
+    from . import colaboradores
+    fichas = colaboradores.documentos_de(cpfs)
     achados = {}
-    for linha in linhas[1:]:
-        cpf = (normaliza_cpf(celula(linha, i_cpf_num))
-               or normaliza_cpf(celula(linha, i_cpf)))
-        if not cpf or cpf not in procurados or cpf in achados:
-            continue
-        achados[cpf] = registro(celula(linha, i_nome),
-                                celula(linha, i_nascimento),
-                                celula(linha, i_telefone), cpf)
-
+    for cpf in cpfs:
+        f = fichas.get(normaliza_cpf(cpf) or cpf)
+        if f and cpf not in achados:
+            nascimento = f.get("nascimento")
+            achados[cpf] = registro(f.get("nome"), nascimento.isoformat()
+                                    if hasattr(nascimento, "isoformat") else nascimento,
+                                    f.get("celular"), cpf)
     return ([achados[c] for c in cpfs if c in achados],
             [c for c in cpfs if c not in achados])
 
 
-# ---------------------------------------------------------------------------
-# Os dois arquivos
-#
-# O layout das colunas é contrato com o portal do BeeVale — não é escolha de
-# estilo. Tudo vai como TEXTO menos o valor e os dias úteis: um CPF que o
-# Excel entenda como número perde o zero da frente, e o portal recusa.
-# ---------------------------------------------------------------------------
 COLUNAS_CADASTRO = ["Nome completo", "Nome Impresso no Cartão", "CPF",
                     "Email", "Data de nascimento", "Celular"]
 
