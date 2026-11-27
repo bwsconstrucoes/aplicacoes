@@ -12275,6 +12275,24 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 285 — Tela do Ponto: a frase "credenciais recusadas" só quando a falha é a credencial (27/11/2026)
+
+- O dono, ao carregar 01/2026 para o 13º: *"não estou conseguindo baixar o ponto por falta
+  de credencial (…) Me informa exatamente qual chamada o sistema está fazendo"*. A falha
+  real era *"o Mobponto não retornou colaboradores para 01/2026"* — a credencial foi
+  ACEITA (401/403 dá outro recado, `ponto._pedir_pagina`) e a lista veio vazia. A frase
+  "Erro 401 ou 403: as credenciais do Mobponto estão sendo recusadas" estava FIXA no
+  `analisesps_folha_ponto.html` e saía em toda falha. Agora só quando a mensagem é de
+  credencial recusada.
+- A chamada, explicada a ele: GET `https://www.mobponto.com.br/ponto/api/endpoint.php`
+  `?type_data=FOLHA_BWS_EXCEL&status=false&mes=1&ano=2026&pagina=1`, cabeçalhos
+  `Authorization` (MOBPONTO_AUTHORIZATION), `api-key` (MOBPONTO_API_KEY) e
+  `api-version: 1.0.0` — copiada do Apps Script dele.
+- **Em aberto (depende dele):** por que o Mobponto devolve 01/2026 vazio — desde quando a
+  empresa usa o Mobponto; se o relatório dele traz janeiro; se o `status=false` filtra
+  meses fechados. Isso decide de onde vem o ponto do início do ano para o rateio do 13º.
+- Teste: `test_a_LISTA_VAZIA_do_Mobponto_nao_e_culpa_da_credencial`.
+
 #### Leva 284 — Folha: a competência achada em qualquer célula (o 13º foi recusado) (27/11/2026)
 
 - O dono, ao importar o 13º: *"Não foi possível importar: Campo "Mês/Ano" não

@@ -7335,6 +7335,31 @@ def test_a_tela_do_ponto_MOSTRA_a_ultima_tentativa_que_falhou(app, monkeypatch):
         "o recado tem de dizer o que fazer com um 401, não só mostrar o erro")
 
 
+def test_a_LISTA_VAZIA_do_Mobponto_nao_e_culpa_da_credencial(app, monkeypatch):
+    """27/11/2026: *"não estou conseguindo baixar o ponto por falta de credencial"* —
+    a tela dizia "401 ou 403: credenciais recusadas" em TODA falha, inclusive quando o
+    Mobponto aceitou a credencial e devolveu a lista vazia (01/2026)."""
+    import datetime as dt
+
+    from app.apps.analisesps import ponto as _ponto, tarefas
+
+    monkeypatch.setattr(_ponto, "_pronto", lambda: True)
+    monkeypatch.setattr(_ponto, "configurado", lambda: True)
+    monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [])
+    monkeypatch.setattr(tarefas, "estado", lambda pista="geral": {
+        "rodando": False, "detalhe": None, "interrompida": None})
+    monkeypatch.setattr(tarefas, "ultima_do_tipo", lambda tipo: {
+        "tipo": "ponto", "disparo": "MARCELO",
+        "inicio": dt.datetime(2026, 11, 27, 9, 0),
+        "fim": dt.datetime(2026, 11, 27, 9, 11), "ok": False,
+        "mensagem": "o Mobponto não retornou colaboradores para 01/2026. Verifique se a "
+                    "competência está correta e se há ponto lançado nela.",
+        "linhas": 0, "visto_em": None, "em_andamento": False})
+    html = _como_mestre(app).get("/analisesps/folha/ponto").get_data(as_text=True)
+    assert "não retornou colaboradores" in html
+    assert "credenciais do Mobponto estão sendo recusadas" not in html
+
+
 def test_a_tela_do_ponto_mostra_a_ultima_que_DEU_CERTO_mas_veio_vazia(
         app, monkeypatch):
     """O caso que ele descreveu: "diz que vai trazer e não traz nada". Se a API
