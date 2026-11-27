@@ -185,3 +185,33 @@ def test_quem_entra_pelo_portal_e_desviado_das_telas_de_dentro(app_real, sessao_
     r = c.get("/erp/inicio")
     assert r.status_code == 302 and r.headers["Location"].endswith("/erp/portal")
     assert c.get("/erp/obras/diario").status_code == 200
+
+
+def test_o_perfil_de_obra_que_veio_pronto_ja_vem_marcado(sessao_real):
+    """⚑ O BURACO QUE ELE ENCONTROU NO PRIMEIRO USO (migração 131).
+
+    A 130 criou a coluna com padrão FALSE para todos — inclusive o perfil
+    "Administrativo de obra", que a migração 065 criou a partir do cargo que
+    SEMPRE levou ao portal. Sem a 131, quem é da obra deixava de ser desviado e
+    passava a abrir as 39 telas que o desvio escondia.
+
+    Ele perguntou exatamente o que precisava ser perguntado: *"não era para eu
+    ter que marcar, né?"* Não era.
+    """
+    from sqlalchemy import text
+
+    marcado = sessao_real.execute(text(
+        "SELECT entra_pelo_portal FROM perfis "
+        " WHERE de_sistema AND nome = 'Administrativo de obra'")).scalar()
+    assert marcado is True, "o perfil de obra que veio pronto tem de entrar pelo portal"
+
+
+def test_os_outros_perfis_prontos_nao_foram_marcados(sessao_real):
+    """A 131 mexe num perfil só. Marcar o do DP, por exemplo, trancaria o DP
+    fora das telas de dentro — e ninguém pediu isso."""
+    from sqlalchemy import text
+
+    outros = sessao_real.execute(text(
+        "SELECT nome FROM perfis WHERE de_sistema AND entra_pelo_portal "
+        "   AND nome <> 'Administrativo de obra'")).all()
+    assert not outros, f"perfis marcados sem motivo: {[o[0] for o in outros]}"
