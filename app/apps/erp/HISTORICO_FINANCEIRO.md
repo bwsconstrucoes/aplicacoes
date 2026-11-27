@@ -37,9 +37,14 @@ completo e em operação. Mexer aqui mexe em dinheiro que sai.
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-### 27/11/2026 (2) — CONTRATO GERADO E ASSINADO, CONTRATOS DA OBRA — no ramo, NÃO publicado
+### 27/11/2026 (2) e (3) — CONTRATO GERADO E ASSINADO, CONTRATOS DA OBRA, EMPREITEIRO PELO DOCUMENTO — ✔ PUBLICADO
 
-Tem a **migração 132**. Ver a seção de 27/11/2026 (2) abaixo. Espera o "pode".
+Publicado na `main` em 27/11/2026 com o "pode" dele. **Tem a migração 132** —
+avisado para apertar "Aplicar atualizações do banco" no mesmo momento.
+**Confirmar com ele que apertou** (sem ela, a assinatura pelo sistema fica
+indisponível e a tela avisa; o resto funciona). Pendências que continuam com
+ele: advogado no texto do contrato, contador na retenção de INSS de PF, e se
+quer limitar quem pode assinar por cada empresa.
 
 ### 27/11/2026 — O FINANCEIRO NO PORTAL E A REGRA DOS CAMPOS — ✔ PUBLICADO
 
@@ -88,7 +93,7 @@ uma identidade, RG."*
 
 ## 27/11/2026 (2) — O CONTRATO DE EMPREITA GERADO E ASSINADO À DISTÂNCIA; OS CONTRATOS DA OBRA
 
-**No ramo, NÃO publicado. Tem migração: 132** (`contrato_documentos` e
+**Publicado em 27/11/2026. Tem migração: 132** (`contrato_documentos` e
 `contrato_assinaturas` — só tabelas novas, nenhuma coluna em tabela existente:
 sem o botão apertado, contrato, aval e medição funcionam como antes; só a
 assinatura pelo sistema fica indisponível, e a tela diz isso).
