@@ -86,6 +86,7 @@ COMPETENCIA_NA_LINHA = re.compile(
     _ROTULO_DA_COMPETENCIA + r"(\d{1,2})\s*[ºo°ª]?\s*/\s*(\d{4})", re.I)
 COMPETENCIA_POR_EXTENSO = re.compile(
     _ROTULO_DA_COMPETENCIA + r"([A-Za-zçÇ]+)\s*(?:/|de)\s*(\d{4})", re.I)
+DATA_DE_CALCULO = re.compile(r"Data\s+de\s+C[áa]lculo\s*:?\s*(\d{1,2})/(\d{1,2})/(\d{4})", re.I)
 SO_O_ANO = re.compile(r"(?:\bAno|Exerc[íi]cio|Ano[\s-]*base)\s*:?\s*(\d{4})", re.I)
 
 
@@ -213,6 +214,9 @@ class FolhaLida:
     total_declarado: Decimal | None = None      # o rodapé, só para informação
     pessoas_declaradas: int | None = None       # idem
     avisos: list = field(default_factory=list)
+    # "Data de Cálculo: 30/11/2026" — o 13º do Fortes traz esta linha e NÃO o
+    # "Mês/Ano" (arquivo real, 27/11/2026). Só o 13º a usa como competência.
+    data_de_calculo: tuple | None = None
 
     @property
     def tipo_sugerido(self) -> str:
@@ -326,6 +330,11 @@ def interpretar(linhas_brutas) -> FolhaLida:
         if not any(celulas):
             continue
         primeira = celulas[0]
+        achado = DATA_DE_CALCULO.search(" ".join(c for c in celulas if c))
+        if achado:
+            lida.data_de_calculo = (int(achado.group(1)), int(achado.group(2)),
+                                    int(achado.group(3)))
+            continue
         if lida.mes is None:
             mes, ano = competencia_da_linha(" ".join(c for c in celulas if c))
             if mes is not None:
@@ -494,11 +503,15 @@ def ler(conteudo: bytes) -> FolhaLida:
     # 1ª, dezembro a 2ª —, e o ano do arquivo (ou o corrente). Dito em aviso.
     if lida.mes is None and lida.tipo_sugerido in DECIMOS:
         import datetime as _dt
-        lida.ano = lida.ano or _dt.date.today().year
-        lida.mes = 11 if lida.tipo_sugerido == DECIMO_1 else 12
-        lida.avisos.append(
-            f"o arquivo não traz o mês da competência; considerada {lida.mes:02d}/{lida.ano}, "
-            f"o mês da {'1ª' if lida.mes == 11 else '2ª'} parcela do 13º.")
+        if lida.data_de_calculo:
+            # O arquivo real do 13º (27/11/2026): "Data de Cálculo: 30/11/2026".
+            _dia, lida.mes, lida.ano = lida.data_de_calculo
+        else:
+            lida.ano = lida.ano or _dt.date.today().year
+            lida.mes = 11 if lida.tipo_sugerido == DECIMO_1 else 12
+            lida.avisos.append(
+                f"o arquivo não traz o mês da competência; considerada {lida.mes:02d}/{lida.ano}, "
+                f"o mês da {'1ª' if lida.mes == 11 else '2ª'} parcela do 13º.")
     if lida.mes is None or lida.ano is None:
         raise ErroDaFolha(
             'Campo "Mês/Ano" não encontrado no arquivo. Sem a competência não é '

@@ -15,6 +15,7 @@ import pytest
 
 from app.apps.analisesps import folha_apropriacao as ap
 from app.apps.analisesps import folha_sintetica as fs
+from tests.test_analisesps_telas import app  # noqa: F401 — o fixture da tela
 
 
 @pytest.mark.parametrize("titulo,tipo", [
@@ -181,3 +182,44 @@ def test_a_folha_COMUM_sem_competencia_continua_recusada():
     """Só o 13º ganha o mês da parcela; a folha comum sem competência é recusada."""
     lida = fs.interpretar(_linhas([["Folha Sintética - Folha de Pagamento"], EMPRESA]))
     assert lida.mes is None
+
+
+def test_o_13o_do_Fortes_traz_DATA_DE_CALCULO_e_nao_Mes_Ano():
+    """O arquivo real (27/11/2026): título, empresa e "Data de Cálculo: 30/11/2026" —
+    nenhum "Mês/Ano". A data de cálculo dá a competência do 13º."""
+    lida = fs.interpretar(_linhas([[TITULO, ": 1"],
+                                   ["Empresa:", "BWS CONSTRUCOES LTDA  - CNPJ: 00.079.526/0001-09"],
+                                   ["Data de Cálculo: 30/11/2026"]]))
+    assert lida.data_de_calculo == (30, 11, 2026)
+    assert not any("Data de Cálculo" in a for a in lida.avisos), "não é linha estranha"
+
+
+ARQUIVO_REAL_DO_13 = ("/root/.claude/uploads/aacbc884-22a3-5149-a9c7-9fa4ed1dc760/"
+                      "996c2bef-Folha_Sint_tica_-_Adiantamento_de_13__Sal_rio.xls")
+
+
+@pytest.mark.banco
+def test_o_ARQUIVO_REAL_do_13o_entra(banco_analisesps):
+    """Só roda onde o arquivo está — ele tem nome e valor de cada pessoa e NÃO vai
+    para o repositório."""
+    import pathlib
+    if not pathlib.Path(ARQUIVO_REAL_DO_13).exists():
+        pytest.skip("arquivo real do 13º não está nesta máquina")
+    from app.apps.analisesps import folha_arquivo as fa
+    feito = fa.importar(pathlib.Path(ARQUIVO_REAL_DO_13).read_bytes(),
+                        nome_do_arquivo="13.xls", quem="TESTE")
+    assert feito["tipo"] == "decimo_1" and (feito["ano"], feito["mes"]) == (2026, 11)
+    assert feito["pessoas"] == 353
+
+
+@pytest.mark.banco
+def test_a_TELA_da_folha_do_13o_abre_e_diz_o_periodo(banco_analisesps, app, monkeypatch):  # noqa: F811
+    from tests.test_analisesps_folha_arquivo import guardar
+    from tests.test_analisesps_telas import _como_mestre
+    from app.apps.analisesps import ponto
+    ponto._ANO_GUARDADO.clear()
+    feito = guardar(monkeypatch, titulo="Folha Sintética - Adiantamento de 13º Salário", mes=11)
+    html = _como_mestre(app).get(f"/analisesps/folha/{feito['id']}").get_data(as_text=True)
+    assert "13º salário" in html and "01/01/2026" in html and "30/11/2026" in html
+    assert "Sem ponto carregado em" in html, "o teste não tem ponto: os meses aparecem"
+    ponto._ANO_GUARDADO.clear()

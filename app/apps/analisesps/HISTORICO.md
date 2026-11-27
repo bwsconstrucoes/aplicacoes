@@ -12286,9 +12286,15 @@ somente Solicitações de uma conta especifica"*.
   só o ano ("Ano: 2026") também serve. **No 13º sem o mês**, vale o mês da parcela
   (11 a 1ª, 12 a 2ª) e o ano do arquivo ou o corrente, com aviso na importação. A folha
   comum sem competência continua recusada.
+- **O arquivo real chegou no mesmo dia, e a causa era outra:** o 13º do Fortes NÃO
+  tem "Mês/Ano" nenhum — o cabeçalho é o título, a empresa e **"Data de Cálculo:
+  30/11/2026"**. A data de cálculo passou a ser lida (`data_de_calculo`) e, só no 13º,
+  dá a competência (11/2026). Na folha comum ela não manda (o fechamento de outubro
+  pode ser calculado em novembro). Lido: 353 pessoas, R$ 271.409,35, fecha.
 - A folha comum real (10/2026, 366 pessoas) lida igual a antes.
-- Não verificado: o arquivo real do 13º — pedido ao dono.
-- Testes em `test_analisesps_folha_decimo.py`.
+- O arquivo do 13º tem nome e valor de cada pessoa: NÃO foi para o repositório; o
+  teste que o usa só roda onde ele está (`ARQUIVO_REAL_DO_13`).
+- Testes em `test_analisesps_folha_decimo.py` (inclui a tela da folha do 13º abrindo).
 
 #### Leva 283 — "Cancelar SP" pelo sistema: o card de pedido no Pipefy, das Solicitações, do Lote e da ficha (26/11/2026)
 
