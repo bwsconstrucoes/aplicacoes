@@ -3482,6 +3482,112 @@ SITUACAO_ROTULOS = {"ABERTA": "Aberta", "EM_ANALISE": "Em análise",
                     "CANCELADA": "Cancelada"}
 
 
+def emails_da_solicitacao(s: Session, solicitacao_id: int, colaborador_id: Optional[int],
+                          criado_em) -> list[dict[str, Any]]:
+    """Todo e-mail à contabilidade desta solicitação, com o histórico inteiro
+    (inclusive os cancelados), para a tela única (27/11/2026).
+
+    Ele: *"Pra eliminar essa tela, eles teriam que estar todos dentro de cada
+    SDP, todo o histórico."* Antes, só o e-mail do PASSO do processo aparecia,
+    e só enquanto o processo estava aberto.
+
+    Os antigos, que nasceram sem o vínculo com a solicitação, entram pela mesma
+    regra que o processo já usa para achá-los (`contabil_processo._pedido_ligado`):
+    mesma pessoa, criado depois da solicitação, e SEM vínculo com outra — e vêm
+    marcados `pelo_vinculo=False`, para a tela dizer que é por aproximação.
+    """
+    from app.apps.erp.core import contabilidade as svc_ct
+    linhas = s.execute(text("""
+        SELECT p.id, p.numero, p.template, p.situacao, p.criado_em, p.concluido_em,
+               (p.solicitacao_id = :sid) AS pelo_vinculo,
+               COALESCE(substring(p.assunto from '\\[((SDP|CT)-[0-9]{4,6}(/[0-9]{1,2})?)\\]'),
+                        p.numero) AS marca
+          FROM dp_pedidos p
+         WHERE p.solicitacao_id = :sid
+            OR (p.solicitacao_id IS NULL AND CAST(:c AS integer) IS NOT NULL
+                AND p.colaborador_id = :c AND p.criado_em >= :desde
+                AND p.criado_em < CAST(:desde AS timestamptz) + interval '60 days')
+         ORDER BY p.id"""),
+        {"sid": solicitacao_id, "c": colaborador_id, "desde": criado_em}).mappings().all()
+    return [{
+        "id": l["id"], "marca": l["marca"], "numero": l["numero"],
+        "template_nome": svc_ct.TEMPLATES.get(l["template"], {}).get("nome", l["template"]),
+        "situacao": l["situacao"],
+        "situacao_rotulo": svc_ct.SITUACAO_ROTULOS.get(l["situacao"], l["situacao"]),
+        "criado_em": l["criado_em"].isoformat(),
+        "pelo_vinculo": bool(l["pelo_vinculo"]),
+    } for l in linhas]
+
+
+def tudo_que_saiu_e_voltou(s: Session, solicitacao_id: int, colaborador_id: Optional[int],
+                           criado_em) -> dict[str, Any]:
+    """TUDO NO MESMO CANTO (27/11/2026). Ele: *"A devolver pela obra é melhor
+    ficar dentro da SDP também. E lá ficar o histórico de mensagens enviadas e
+    obviamente as respostas (…) pra não precisar ir em nenhum outro canto pra
+    tratar de uma mesma SDP."*
+
+    Devolve os e-mails à contabilidade, as devoluções pela obra e a conversa
+    inteira (cada e-mail que saiu — pedido, reenvio, cobrança — e cada resposta
+    que a caixa casou), em ordem de data. Quatro leituras ao banco, nenhuma
+    ida à internet.
+    """
+    emails = emails_da_solicitacao(s, solicitacao_id, colaborador_id, criado_em)
+    ids = [e["id"] for e in emails]
+    devs = [dict(l) for l in s.execute(text("""
+        SELECT d.id, d.numero, d.o_que, d.prazo, d.situacao, d.cobrancas,
+               d.criado_em, d.devolvido_em, o.codigo AS obra,
+               doc.anexo_id AS anexo_devolvido, env.anexo_id AS anexo_enviado
+          FROM dp_devolucoes d
+          LEFT JOIN obras o ON o.id = d.obra_id
+          LEFT JOIN documentos doc ON doc.id = d.documento_id
+          LEFT JOIN documentos env ON env.id = d.documento_enviado_id
+         WHERE d.pedido_id = ANY(:ids)
+            OR (CAST(:c AS integer) IS NOT NULL AND d.colaborador_id = :c
+                AND d.criado_em >= :desde
+                AND d.criado_em < CAST(:desde AS timestamptz) + interval '60 days')
+         ORDER BY d.id"""),
+        {"ids": ids, "c": colaborador_id, "desde": criado_em}).mappings().all()]
+    for d in devs:
+        for k in ("prazo", "criado_em", "devolvido_em"):
+            d[k] = d[k].isoformat() if d.get(k) else None
+    dev_ids = [d["id"] for d in devs]
+    conversa: list[dict[str, Any]] = []
+    if ids:
+        for l in s.execute(text("""
+            SELECT e.id, e.entidade_id, e.para, e.assunto, e.corpo, e.anexos,
+                   e.situacao, e.erro, e.criado_em
+              FROM envios_email e
+             WHERE e.entidade_tipo = 'dp_pedido' AND e.entidade_id = ANY(:ids)
+             ORDER BY e.id"""), {"ids": ids}).mappings().all():
+            conversa.append({
+                "sentido": "SAIU", "quando": l["criado_em"].isoformat(),
+                "pedido_id": l["entidade_id"],
+                "quem": ", ".join(l["para"] or []), "assunto": l["assunto"],
+                "corpo": l["corpo"] or "", "situacao": l["situacao"],
+                "erro": l["erro"] or "",
+                "anexos": [a.get("nome") if isinstance(a, dict) else str(a)
+                           for a in (l["anexos"] or [])]})
+    if ids or dev_ids:
+        from app.apps.erp.core.comum import email_entrada
+        com_corpo = email_entrada._tem_coluna_corpo(s)
+        for l in s.execute(text(f"""
+            SELECT m.de, m.assunto, m.recebido_em, m.processado_em, m.pedido_id,
+                   m.devolucao_id, m.anexos, m.arquivados,
+                   {"m.corpo" if com_corpo else "NULL AS corpo"}
+              FROM email_entrada_mensagens m
+             WHERE m.pedido_id = ANY(:ids) OR m.devolucao_id = ANY(:devs)
+             ORDER BY m.id"""), {"ids": ids, "devs": dev_ids}).mappings().all():
+            q = l["recebido_em"] or l["processado_em"]
+            conversa.append({
+                "sentido": "CHEGOU", "quando": q.isoformat() if q else None,
+                "pedido_id": l["pedido_id"], "devolucao_id": l["devolucao_id"],
+                "quem": l["de"] or "", "assunto": l["assunto"] or "",
+                "corpo": l["corpo"] or "", "anexos_qtd": int(l["anexos"] or 0),
+                "arquivados": int(l["arquivados"] or 0)})
+    conversa.sort(key=lambda x: x["quando"] or "")
+    return {"emails_contabilidade": emails, "devolucoes": devs, "conversa": conversa}
+
+
 def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
     """O pedido inteiro: o que foi pedido, o checklist e a trilha.
 
@@ -3575,6 +3681,9 @@ def ler(s: Session, solicitacao_id: int) -> dict[str, Any]:
                      and (d["situacao"] == svc_contabil.EM_ANDAMENTO
                           or (d["dados"] or {}).get("processo_contabil"))
                      else None),
+        # ⚑ TODOS OS E-MAILS À CONTABILIDADE DESTA SOLICITAÇÃO (27/11/2026) —
+        # ver `emails_da_solicitacao`.
+        **tudo_que_saiu_e_voltou(s, d["id"], d["colaborador_id"], d["criado_em"]),
         # ⚑ A ANÁLISE DO AGENTE (20/11/2026, noite) — `core/dp_analise.py`.
         "analise": svc_analise.analisar(s, {**d, "dados": d["dados"] or {}}),
         "mudanca_pedida": (d["dados"] or {}).get("mudanca_pedida"),

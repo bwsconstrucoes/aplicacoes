@@ -13182,8 +13182,14 @@ def api_dp_solicitacao(solicitacao_id: int):
     from app.apps.erp.core.auth.permissoes import exigir_solicitacao_dp_no_escopo
     try:
         with get_session() as s:
-            exigir_solicitacao_dp_no_escopo(s, _usuario_logado(s), solicitacao_id)
-            return jsonify({"ok": True, "solicitacao": svc.ler(s, solicitacao_id)})
+            usuario = _usuario_logado(s)
+            exigir_solicitacao_dp_no_escopo(s, usuario, solicitacao_id)
+            sol = svc.ler(s, solicitacao_id)
+            # A conversa com a contabilidade (o texto dos e-mails, com salário
+            # e documentos) é do DP; a obra vê o pedido, não a correspondência.
+            if not pode(usuario, "pedir_contabilidade"):
+                sol["conversa"] = []
+            return jsonify({"ok": True, "solicitacao": sol})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 404
 

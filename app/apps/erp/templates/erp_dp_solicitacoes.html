@@ -500,6 +500,9 @@ function pintarPedido(){
       ${escapar(p.cancelando.motivo)} — fecha quando a contabilidade confirmar.</div>` : ""}
     ${blocoDaAnalise(p)}
     ${blocoDoProcesso(p)}
+    ${blocoDosEmails(p)}
+    ${blocoDasDevolucoes(p)}
+    ${blocoDaConversa(p)}
     <div id="dlg-agente"></div>
     {# ⚑ OS DOCUMENTOS E O CADASTRO, À VISTA (19/11/2026). Ele: *"conferir se
        a documentação veio completa, mas cadê a documentação? A gente não
@@ -548,6 +551,17 @@ function pintarPedido(){
     </div>` : ""}`;
   ligarBotoesDoProcesso(p);
   pintarOQueOAgenteFez(p);
+  els("dlg-corpo").querySelectorAll("[data-email-ct]").forEach(b =>
+    b.addEventListener("click", () => verPedidoContabil(+b.dataset.emailCt)));
+  els("dlg-corpo").querySelectorAll("[data-cobrar-dev]").forEach(b =>
+    b.addEventListener("click", async () => {
+      if (!confirm("Mandar a cobrança para a obra pelo WhatsApp?")) return;
+      try {
+        const r = await api(`/erp/api/dp/devolucoes/${b.dataset.cobrarDev}/cobrar`, {method: "POST"});
+        await abrirPedido(p.id);
+        aviso("dlg-msg", `Cobrança enviada a ${r.avisados} de ${r.telefones} telefone(s).`, "ok");
+      } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    }));
   els("dlg-corpo").querySelectorAll("[data-ver-papel]").forEach(b =>
     b.addEventListener("click", () => verPapel(b.dataset.verPapel, b.dataset.nome)));
   if (els("s-corrigir")) els("s-corrigir").addEventListener("click", () => corrigirPedido(p));
@@ -720,6 +734,67 @@ function blocoDoProcesso(p){
           pr.total - pr.cumpridos > 1 ? " e mais " + (pr.total - pr.cumpridos - 1) : ""}.</small>`}</div>` : ""}`;
 }
 
+
+{# ⚑ TODOS OS E-MAILS À CONTABILIDADE DESTA SOLICITAÇÃO (27/11/2026). Ele:
+   *"Pra eliminar essa tela, eles teriam que estar todos dentro de cada SDP,
+   todo o histórico."* Clicar abre o e-mail com tudo: o texto, o que voltou,
+   cobrar, concluir. #}
+function blocoDosEmails(p){
+  const l = p.emails_contabilidade || [];
+  if (!l.length) return "";
+  return `<h4>E-mails à contabilidade (${l.length})</h4>
+    <table><tbody>${l.map(e => `<tr>
+      <td class="dados" style="white-space:nowrap"><button type="button" class="link-btn"
+        data-email-ct="${e.id}">${escapar(e.marca)}</button></td>
+      <td>${escapar(e.template_nome)}${e.pelo_vinculo ? "" : `<br><small class="desc"
+        title="Enviado antes de o e-mail ficar ligado à solicitação; aparece aqui por ser da mesma pessoa, na mesma época">da mesma pessoa, sem vínculo gravado</small>`}</td>
+      <td class="dados">${quandoBR(e.criado_em).slice(0, 10)}</td>
+      <td><span class="etiqueta ${e.situacao === "CONCLUIDO" ? "verde"
+        : e.situacao === "DIVERGENTE" ? "vermelho" : e.situacao === "CANCELADO" ? "" : "ambar"}">${
+        escapar(e.situacao_rotulo)}</span></td></tr>`).join("")}</tbody></table>`;
+}
+
+{# ⚑ A DEVOLVER PELA OBRA, DENTRO DA SOLICITAÇÃO (27/11/2026). Ele: *"Tem
+   que ficar tudo no mesmo canto."* #}
+const ROTULO_DEVOLUCAO = {ABERTA: "esperando a obra", COBRADA: "cobrada, esperando a obra",
+                          DEVOLVIDA: "devolvida", CANCELADA: "cancelada"};
+function blocoDasDevolucoes(p){
+  const l = p.devolucoes || [];
+  if (!l.length) return "";
+  return `<h4>A devolver pela obra (${l.length})</h4>
+    <table><tbody>${l.map(d => `<tr>
+      <td class="dados" style="white-space:nowrap">${escapar(d.numero)}</td>
+      <td>${escapar(d.o_que)}${d.obra ? `<br><small class="desc">obra ${escapar(d.obra)}</small>` : ""}
+        ${d.anexo_enviado ? `<br><a class="link-btn" href="/erp/anexo/${d.anexo_enviado}" target="_blank">o que foi para a obra</a>` : ""}
+        ${d.anexo_devolvido ? ` · <a class="link-btn" href="/erp/anexo/${d.anexo_devolvido}" target="_blank">o que voltou</a>` : ""}</td>
+      <td class="dados">${d.prazo ? "prazo " + dataBR(d.prazo) : ""}${d.cobrancas
+        ? `<br><small>${d.cobrancas} cobrança(s)</small>` : ""}</td>
+      <td><span class="etiqueta ${d.situacao === "DEVOLVIDA" ? "verde"
+        : d.situacao === "CANCELADA" ? "" : "ambar"}">${escapar(ROTULO_DEVOLUCAO[d.situacao] || d.situacao)}</span>
+        ${PODE_REVISAR_AGENTE && ["ABERTA", "COBRADA"].includes(d.situacao)
+          ? `<br><button class="link-btn" data-cobrar-dev="${d.id}">cobrar a obra</button>` : ""}</td>
+    </tr>`).join("")}</tbody></table>`;
+}
+
+{# ⚑ A CONVERSA INTEIRA (27/11/2026): cada e-mail que saiu (pedido, reenvio,
+   cobrança) e cada resposta que a caixa casou, em ordem de data. Só o DP vê
+   o texto — o servidor nem manda para os outros. #}
+function blocoDaConversa(p){
+  const l = p.conversa || [];
+  if (!l.length) return "";
+  return `<h4>A conversa com a contabilidade (${l.length})</h4>
+    <div class="tabela-rolagem" style="max-height:360px"><table><tbody>${l.map(m => `<tr>
+      <td style="white-space:nowrap" class="dados">${m.sentido === "SAIU" ? "⬆ saiu" : "⬇ chegou"}<br>
+        <small>${quandoBR(m.quando)}</small></td>
+      <td><details><summary><b>${escapar(m.assunto || "(sem assunto)")}</b><br>
+        <small class="desc">${m.sentido === "SAIU" ? "para " : "de "}${escapar(m.quem || "—")}${
+          m.situacao === "FALHOU" ? ` · <span class="aviso-texto">não saiu: ${escapar(m.erro)}</span>` : ""}${
+          (m.anexos || []).length ? " · 📎 " + m.anexos.map(escapar).join(", ") : ""}${
+          m.anexos_qtd ? ` · 📎 ${m.anexos_qtd} anexo(s)${m.arquivados ? `, ${m.arquivados} guardado(s) na pessoa` : ""}` : ""}</small></summary>
+        <div class="cartao-dica" style="white-space:pre-wrap; max-height:260px; overflow:auto; margin-top:6px">${
+          escapar(m.corpo || (m.sentido === "CHEGOU" ? "(o texto desta resposta não foi guardado — chegou antes de 26/11/2026)" : ""))}</div>
+      </details></td></tr>`).join("")}</tbody></table></div>`;
+}
 
 {# ⚑ O QUE O AGENTE FEZ NESTA SOLICITAÇÃO (26/11/2026), com ✔ Certo / ✘ Errado.
    Ele: *"ele vai fazendo, aí eu analiso (…) opa, essa aqui deu errado."* A

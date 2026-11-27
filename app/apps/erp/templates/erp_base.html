@@ -1701,14 +1701,23 @@ function _terminouTrabalho(b){
 // ⚑ O DIÁRIO DO AGENTE (26/11/2026) — a tabela das ações que ele fez sozinho,
 // com ✔ Certo / ✘ Errado. Usada dentro da solicitação e na aba "Diário do
 // agente" de Contabilidade e agente (`agente_diario`).
+// Data e hora de um instante do servidor (que vem em UTC) no horário da obra.
+function quandoBR(iso){
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleString("pt-BR", {timeZone: "America/Fortaleza",
+      day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"})
+      .replace(",", "");
+  } catch(e){ return iso.slice(0, 16).replace("T", " "); }
+}
+
 function desenharAcoesDoAgente(acoes, comPedido){
   const sel = a => a.revisao === "CERTO" ? `<span class="etiqueta verde">✔ certo</span>`
     : a.revisao === "ERRADO" ? `<span class="etiqueta vermelho" title="${escapar(a.comentario || "")}">✘ errado</span>`
     : `<button class="btn secundario" data-ag-certo="${a.id}">✔ Certo</button>
        <button class="btn secundario" data-ag-errado="${a.id}">✘ Errado…</button>`;
   return `<div class="tabela-rolagem"><table><tbody>${acoes.map(a => `<tr>
-    <td style="white-space:nowrap" class="dados">${dataBR((a.criado_em || "").slice(0, 10))}
-      ${(a.criado_em || "").slice(11, 16)}</td>
+    <td style="white-space:nowrap" class="dados">${quandoBR(a.criado_em)}</td>
     ${comPedido ? `<td class="dados" style="white-space:nowrap">${a.solicitacao_id
       ? `<a href="#" class="link-btn" data-ag-sol="${a.solicitacao_id}">${escapar(a.solicitacao_numero || "")}</a>`
       : "—"}<br><small>${escapar(a.pessoa || "")}</small></td>` : ""}

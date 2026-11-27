@@ -1580,3 +1580,39 @@ def test_o_dp_anexa_o_retorno_no_pedido_e_o_agente_confere(mundo, monkeypatch):
         agente_diario.revisar(s, a["id"], "CERTO", "", mundo["dp"])
     linha = next(x for x in ps.listar(s)["solicitacoes"] if x["id"] == p["id"])
     assert linha["agente_a_revisar"] == 0
+
+
+@pytestmark_banco
+def test_a_solicitacao_mostra_todos_os_emails_a_contabilidade(mundo, monkeypatch):
+    """Ele: *"Pra eliminar essa tela, eles teriam que estar todos dentro de cada
+    SDP, todo o histórico."* Inclusive o antigo, sem vínculo gravado."""
+    from app.apps.erp.core import contabilidade as svc_ct
+    s, c, p, pid, _ = _dependente_enviado(mundo, monkeypatch)
+    # um e-mail antigo da mesma pessoa, de antes do vínculo com a solicitação
+    antigo = svc_ct.abrir(s, {"template": "DIVERSOS", "colaborador_id": c.id,
+                              "dados": {"descricao": "pedido avulso"}}, mundo["dp"])["id"]
+    emails = svc.ler(s, p["id"])["emails_contabilidade"]
+    por_id = {e["id"]: e for e in emails}
+    assert por_id[pid]["pelo_vinculo"] is True and por_id[pid]["marca"] == p["numero"]
+    assert por_id[antigo]["pelo_vinculo"] is False
+
+
+@pytestmark_banco
+def test_a_solicitacao_junta_a_conversa_e_o_que_a_obra_devolve(mundo, monkeypatch):
+    """Ele: *"tem que ficar tudo no mesmo canto (…) pra não precisar ir em
+    nenhum outro canto pra tratar de uma mesma SDP."*"""
+    s, c, p, pid, _ = _dependente_enviado(mundo, monkeypatch)
+    s.execute(text("""INSERT INTO envios_email (entidade_tipo, entidade_id, para, assunto,
+                      corpo, situacao, criado_em)
+                      VALUES ('dp_pedido', :p, ARRAY['contab@x.com'], '[SDP] pedido', 'texto do pedido',
+                              'ENVIADO', now() - interval '1 day')"""), {"p": pid})
+    s.execute(text("""INSERT INTO email_entrada_mensagens (message_id, de, assunto, recebido_em,
+                      pedido_id, situacao) VALUES ('<r1@x>', 'contab@x.com', 'RE: [SDP] pedido',
+                      now(), :p, 'CASADA')"""), {"p": pid})
+    s.execute(text("""INSERT INTO dp_devolucoes (numero, pedido_id, colaborador_id, o_que,
+                      documento_esperado) VALUES ('DV-09999', :p, :c, 'assinar a ficha',
+                      'DOC-PESSOA-OUTRO')"""), {"p": pid, "c": c.id})
+    sol = svc.ler(s, p["id"])
+    assert [m["sentido"] for m in sol["conversa"]] == ["SAIU", "CHEGOU"]
+    assert sol["conversa"][0]["corpo"] == "texto do pedido"
+    assert [d["numero"] for d in sol["devolucoes"]] == ["DV-09999"]

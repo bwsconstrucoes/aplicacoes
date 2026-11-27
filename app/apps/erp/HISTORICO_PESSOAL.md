@@ -151,6 +151,36 @@ mundo muda entre uma sessão e outra, e ele é a única fonte disso.
 
 ## Decisões desta área
 
+### 27/11/2026 — Tudo da solicitação no mesmo canto: os e-mails, a devolução pela obra e a conversa inteira
+
+Ele: *"Pra eliminar essa tela, eles teriam que estar todos dentro de cada SDP,
+todo o histórico"* e *"A devolver pela obra é melhor ficar dentro da SDP
+também. E lá ficar o histórico de mensagens enviadas e obviamente as respostas
+(…) pra não precisar ir em nenhum outro canto pra tratar de uma mesma SDP."*
+
+O defeito que ele viu: o e-mail à contabilidade só aparecia na solicitação
+como PASSO do processo, e só enquanto o processo estava aberto — solicitação
+atendida ou antiga não mostrava nada.
+
+- `pessoal_solicitacoes.tudo_que_saiu_e_voltou` (no `ler` da solicitação):
+  **E-mails à contabilidade** (todos, inclusive cancelados; clicar abre o
+  e-mail com cobrar/concluir), **A devolver pela obra** (com "cobrar a obra" e
+  os links do que foi e do que voltou) e **A conversa com a contabilidade**
+  (cada e-mail que saiu — pedido, reenvio, cobrança — e cada resposta casada,
+  em ordem, com o texto). 4 leituras ao banco, nenhuma ida à internet.
+- E-mail/devolução ANTIGO sem vínculo gravado entra pela mesma regra que o
+  processo já usava: mesma pessoa, até 60 dias depois da solicitação; a tela
+  marca "da mesma pessoa, sem vínculo gravado".
+- A conversa (texto dos e-mails) só vai para quem tem `pedir_contabilidade`
+  — a obra vê o pedido, não a correspondência.
+- Resposta que chegou antes de 26/11 aparece sem o texto (ele não era guardado).
+- Horas na tela no horário de Fortaleza (`quandoBR`, erp_base) — antes o
+  diário mostrava UTC, 3 h adiantado.
+
+**Pendente com ele:** tirar de "Contabilidade e agente" as abas "Todos os
+e-mails" e "A devolver pela obra" e o botão "+ Pedido" (proposto, esperando o
+"pode").
+
 ### 26/11/2026 (12) — O agente lê a caixa de hora em hora, nos dias úteis, fora das batidas do ponto
 
 Ele: *"de hora em hora, mas sempre protegendo o horário de batida do ponto
