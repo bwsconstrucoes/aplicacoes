@@ -1,83 +1,95 @@
-# Cadastro de colaboradores: planilha × ERP (27/11/2026)
+# Cadastro de colaboradores: planilha × ERP
 
-O dono: *"a planilha já está hoje desatualizada. Então, o cadastro é o ERP. (…) A gente
-precisa saber exatamente quais campos, quais colunas da planilha são observadas para a
-montagem das telas de pagamento (…) e quais campos no ERP são correspondentes (…) para
-saber se está tudo ok e definitivamente deixar de usar a planilha."*
+O dono (27/11/2026): *"a planilha já está hoje desatualizada. Então, o cadastro é o ERP.
+(…) A gente precisa saber exatamente quais campos, quais colunas da planilha são
+observadas para a montagem das telas de pagamento (…) e quais campos no ERP são
+correspondentes (…) para definitivamente deixar de usar a planilha."*
 
-Levantado lendo o código, não suposto. Fontes: `colaboradores.py` (as colunas que a
-cópia guarda e quem lê cada uma), `erp/core/cadastros/pessoas.py › para_folha` (o que o
-ERP entrega para a folha) e o modelo `Colaborador` do ERP.
+Levantado no código (as colunas que a cópia guarda e quem lê cada uma) e na tela de
+cadastro do ERP (`erp_colaboradores.html`: o RÓTULO que a pessoa vê e o campo em que ele
+grava). As correspondências marcadas "dono" foram confirmadas por ele em 27/11/2026.
 
 ## Como é hoje
 
-- **A cópia da planilha** ("Registro de Colaboradores", aba "Dados Documentos") é lida
-  pelo botão "Atualizar cadastro" e guardada em `analisesps.colaborador`. Quase todas as
-  telas de pagamento leem SÓ dela.
-- **O ERP completa a cópia** (`colaboradores.para_a_folha`) em dois lugares só: os
-  **diaristas** (26/11) e a **data de admissão do rateio da folha** (27/11). Completa
-  quer dizer: entra quem não está na cópia, e quem voltou pelo ERP (readmissão) usa a
-  ficha do ERP.
-- Quem foi admitido pelo ERP depois de 25/11 (a admissão não vai mais à planilha) **não
-  existe** para a Folha da Contabilidade ("sem cadastro"), alimentação/transporte e
-  gratificados.
+- As telas de pagamento leem a **cópia da planilha** ("Registro de Colaboradores", aba
+  "Dados Documentos", botão "Atualizar cadastro"). O ERP só completa a cópia nos
+  diaristas (26/11) e na data de admissão do rateio da folha (27/11).
+- Quem foi admitido pelo ERP depois de 25/11 não está na planilha → "sem cadastro" na
+  Folha da Contabilidade; fora de alimentação/transporte e gratificados.
 
-## As colunas usadas nas telas de pagamento, e o correspondente no ERP
+## O mapa: coluna da planilha → campo no ERP
 
-Legenda — **ERP entrega**: já sai no `para_folha` com o mesmo nome. **Existe, não sai**:
-o campo existe na ficha do ERP mas o `para_folha` não o entrega (falta uma linha).
-**Conferir**: existe, mas o significado ou o formato pode ser outro.
+**Entrega** = o ERP já manda à folha (`erp/core/cadastros/pessoas.py › para_folha`).
+**Falta mandar** = o campo existe no ERP, mas não vai à folha — é acrescentar.
 
-| Coluna da planilha | Campo | Quem usa (pagamento) | No ERP | Situação |
-|---|---|---|---|---|
-| CPF | `cpf` | todas | `cpf` | ERP entrega |
-| Nome Completo | `nome` | todas (nome no arquivo do banco) | `nome` | ERP entrega |
-| ID Fortes (col. BU) | `id_fortes` | **Folha da contabilidade** — é o que liga a linha do Fortes ao CPF | `id_fortes` | ERP entrega — **conferir se todos têm** |
-| Fase Atual | `fase` | folha (já saiu / saindo / afastado), auxílios, gratificados, diaristas | `situacao` (ATIVO…) | **Conferir**: a planilha usa as fases do Pipefy; o sistema procura "desligad" e "afastad" no texto |
-| Cargo | `cargo` | telas da folha (exibição), DC, avulso | `cargo` (tabela de cargos) | ERP entrega |
-| Tipo | `tipo` | **diaristas** (Prestador × CTPS decide a diária) | `vinculo` / tipo de contrato | ERP entrega (`_tipo_para_a_folha`) |
-| Tipo de Contrato | `tipo_contrato` | diaristas (RPA), DC, avulso, gratificados | `tipo_contrato` | ERP entrega (rótulo) |
-| Objeto Obra | `obra_cadastro` | folha (obra do cadastro), auxílios, diaristas, gratificados, DC, avulso | `obra_id` → código | **Conferir**: a planilha traz o NOME da obra; o ERP, o CÓDIGO |
-| Código da Obra | `obra_codigo` | DC, calendário, faturamento — e **a "obra do cadastro" da folha** (`resolver_obra` usa este código primeiro) | obra ATUAL (a do ponto) | **⚠️ Mudou de sentido** em 20/11: no ERP é a obra do ponto. Lida do ERP, a coluna "Obra — cadastro" da folha viraria a obra do ponto e o aviso "cadastro ≠ ponto" perderia o sentido — a troca tem de ler `obra_cadastro` (o código da ficha) para isso |
-| Data de Início | `data_inicio` | diaristas (dias antes da admissão = diária), folha | `data_inicio` | ERP entrega |
-| Data de Admissão | `data_admissao` | folha (rateio desde a admissão), diaristas | `admissao` | ERP entrega |
-| Data do Aviso Prévio | `aviso_previo` | folha ("saindo") | `aviso_previo` | ERP entrega |
-| Último dia Trabalhado | `ultimo_dia` | folha, auxílios | `ultimo_dia` | ERP entrega |
-| Data de Saída | `data_saida` | folha ("já saiu"), auxílios | `demissao` | ERP entrega |
-| Categoria Auxílio Alimentação | `modo_alimentacao` | **alimentação** | `categoria_alimentacao` | ERP entrega (traduzido para a palavra da folha) |
-| Valor Auxílio Alimentação | `valor_alimentacao` | **alimentação** | `aux_alimentacao` | ERP entrega ("não recebe" zera) |
-| Categoria Auxílio Transporte | `modo_transporte` | **transporte** | `categoria_transporte` | ERP entrega (traduzido) |
-| Valor Auxílio Transporte | `valor_transporte` | **transporte** | `aux_transporte` | ERP entrega |
-| Observação Ajuda de Custo | `observacao_auxilio` | auxílios | `observacao_auxilio` | ERP entrega |
-| Valor da Diária | `valor_diaria` | **diaristas**, DC | `valor_diaria` | ERP entrega |
-| Valor da Gratificação | `valor_gratificacao` | **gratificados** | `valor_gratificacao` | ERP entrega |
-| Recebe Parcela Única | `parcela_unica` | gratificados | `parcela_unica` | ERP entrega |
-| Recebe Gratificação Mensal (col. BE) | `recebe_gratificacao` | **gratificados** (quem entra) | `recebe_gratificacao` | **Existe, não sai** |
-| Valor do Mês (col. BG) | `valor_mensal` | **gratificados** (mensalistas) | `valor_mes` | **Existe, sai com outro nome** (`valor_mes`) |
-| Recebe via SP (col. BI) | `recebe_via_sp` | gratificados / via SP | `recebe_via_sp` | ERP entrega |
-| Nome Credor | `nome_credor` | gratificados via SP (PJ) | `razao_social_pj`? | **Conferir** — não sai; o mais próximo é a razão social PJ |
-| Pix CNPJ | `pix_cnpj` | gratificados via SP (PJ) | `cnpj_pj`? | **Conferir** — não sai |
-| Chave Pix Tipo / Chave Pix | `pix_tipo`, `pix_chave` | gratificados via SP | `pix_tipo`, `pix_chave` | ERP entrega |
-| CNPJ Admissão (col. BT) | `cnpj_admissao` | **separar a folha por empresa** (BWS × outras) | `cnpj_admissao` | **Existe, não sai** |
-| Nº Registro Pipefy | `card_pipefy` | Arquivos gerados (link do card) | `ref_pipefy` | ERP entrega (morre com o Pipefy) |
-| Matrícula, Celular, Data de Nascimento | — | planilha de cadastro BeeVale/SomaPay, ficha | `matricula`, `telefone`, `data_nascimento` | ERP entrega |
-| RG (nº, emissão, órgão, UF), Nome da Mãe, Sexo, endereço, e-mail | `documentos` | **planilha de cadastro BeeVale/SomaPay** | `rg`, `rg_emissao`, `rg_orgao`, `rg_uf`, `nome_mae`, `sexo`, `cep`, `logradouro`, `numero_endereco`, `bairro`, `municipio`, `uf`, `email` | **Existe, não sai** |
-| Paga por BeeVale | `paga_por_beevale` | só a tela Colaboradores (exibição) | — | não existe no ERP (não pesa no pagamento) |
-| Convenção | `convencao` | — (exibição) | `convencao` | ERP entrega |
+| Coluna da planilha | Rótulo no ERP (campo) | Quem usa no pagamento | Situação |
+|---|---|---|---|
+| CPF | CPF (`cpf`) | todas | Entrega |
+| Nome Completo | Nome (`nome`) | todas | Entrega |
+| ID Fortes (col. BU) | ID Fortes (`id_fortes`) | Folha da Contabilidade (liga o Fortes ao CPF) | Entrega |
+| Matrícula | Matrícula (`matricula`) | ficha, cadastro BeeVale/SomaPay | Entrega |
+| Celular | Telefone (`telefone`) | cadastro BeeVale/SomaPay | Entrega |
+| Data de Nascimento | Data de nascimento (`data_nascimento`) | ficha, cadastro BeeVale/SomaPay | Entrega |
+| Cargo | Cargo (`cargo_id`) | telas da folha | Entrega |
+| Tipo | Vínculo (`vinculo`) | **diaristas** | Entrega |
+| Tipo de Contrato | Tipo de contrato (`tipo_contrato`) | diaristas, DC, avulso, gratificados | Entrega |
+| Fase Atual | Situação (`situacao`) — **a confirmar** (ou Etapa?) | folha (saiu / afastado), auxílios, gratificados | Entrega |
+| Objeto Obra | **Obra de cadastro** (`obra_id`) — dono | folha (obra do cadastro), auxílios, diaristas, gratificados, DC, avulso | Entrega como `obra_cadastro`; ⚠️ a folha hoje lê primeiro o `obra_codigo`, que no ERP é a obra do PONTO — ajustar na troca |
+| Data de Início | Data de início (`data_inicio`) | diaristas, folha | Entrega |
+| Data de Admissão | Data de admissão (`admissao`) | folha (rateio), diaristas | Entrega |
+| Data do Aviso Prévio | Data do aviso prévio (`aviso_previo`) | folha ("saindo") | Entrega |
+| Último dia Trabalhado | Último dia trabalhado (`ultimo_dia`) | folha, auxílios | Entrega |
+| Data de Saída | Data de saída (`demissao`) | folha ("já saiu"), auxílios | Entrega |
+| Categoria Auxílio Alimentação | Categoria do auxílio-alimentação (`categoria_alimentacao`) | **alimentação** | Entrega (traduzida para a palavra da folha) |
+| Valor Auxílio Alimentação | Valor do auxílio-alimentação (`aux_alimentacao`) | **alimentação** | Entrega ("Não recebe" zera) |
+| Categoria Auxílio Transporte | Categoria do auxílio-transporte (`categoria_transporte`) | **transporte** | Entrega (traduzida) |
+| Valor Auxílio Transporte | Valor do auxílio-transporte (`aux_transporte`) | **transporte** | Entrega |
+| Observação Ajuda de Custo | Observação da ajuda de custo (`observacao_auxilio`) | auxílios | Entrega |
+| Valor da Diária | Valor da diária (`valor_diaria`) | **diaristas**, DC | Entrega |
+| Recebe Gratificação Mensal (col. BE) | Recebe gratificação mensal? (`recebe_gratificacao`) — dono | **gratificados** | **Falta mandar** |
+| Valor da Gratificação | Valor da gratificação (`valor_gratificacao`) — dono | **gratificados** | Entrega |
+| Valor do Mês (col. BG) | Valor do mês (`valor_mes`) — dono | **gratificados** (mensalistas) | Sai como `valor_mes`; a folha lê `valor_mensal` — **ligar** |
+| Recebe Parcela Única | Recebe em parcela única? (`parcela_unica`) | gratificados | Entrega |
+| Recebe via SP (col. BI) | Recebe via SP? (`recebe_via_sp`) | gratificados / via SP | Entrega |
+| Nome Credor | Razão social (PJ) (`razao_social_pj`) — dono | gratificados via SP | **Falta mandar** |
+| Pix CNPJ | CNPJ (PJ) (`cnpj_pj`) — dono | gratificados via SP | **Falta mandar** |
+| Chave Pix Tipo | Tipo da chave Pix (`pix_tipo`) | gratificados via SP | Entrega |
+| Chave Pix | Chave Pix (`pix_chave`) | gratificados via SP | Entrega |
+| CNPJ Admissão (col. BT) | **Empresa de registro** (`empresa_id` → CNPJ da empresa; sem empresa, o `cnpj_admissao` antigo) — dono | **separar a folha por empresa** | **Falta mandar**. A folha compara só o CNPJ (14 dígitos): o texto é "nome – CNPJ" no ERP e "CNPJ – nome" na planilha; tira-se o CNPJ pelos dígitos |
+| RG | Nº da identidade (`rg`) — dono | cadastro BeeVale/SomaPay | **Falta mandar** |
+| Data de Emissão (do documento) | Emissão do documento (`rg_emissao`) — dono | idem | **Falta mandar** |
+| Órgão Emissor | Órgão emissor (`rg_orgao`) — dono | idem | **Falta mandar** |
+| UF (do documento) | UF do documento (`rg_uf`) — dono | idem | **Falta mandar** |
+| Nome da Mãe | Nome da mãe (`nome_mae`) — dono | idem | **Falta mandar** |
+| Sexo | Sexo (`sexo`) — dono | idem | **Falta mandar** |
+| CEP | CEP (`cep`) — dono | idem | **Falta mandar** |
+| Logradouro | Logradouro (`logradouro`) — dono | idem | **Falta mandar** |
+| Número | Número (`numero_endereco`) — dono | idem | **Falta mandar** |
+| Complemento | Complemento (`complemento`) | idem | **Falta mandar** |
+| Bairro | Bairro (`bairro`) — dono | idem | **Falta mandar** |
+| Cidade | Município (`municipio`) — dono | idem | **Falta mandar** |
+| Estado | UF (`uf`) | idem | **Falta mandar** |
+| E-mail | E-mail (`email`) — dono | idem | **Falta mandar** |
+| Nº Registro Pipefy | (`ref_pipefy`) | link do card em Arquivos gerados | Entrega (morre com o Pipefy) |
+| Paga por BeeVale | — | — | **Sai**: desativado, não se usa mais (dono) |
+| Convenção | Convenção (`convencao_id`) | — (exibição) | Entrega |
 
-## O que falta para desligar a planilha
+## Em aberto
 
-1. **Acrescentar ao `para_folha` do ERP** o que existe e não sai: `cnpj_admissao`,
-   `recebe_gratificacao`, `valor_mensal` (o `valor_mes`), os documentos da planilha de
-   cadastro do BeeVale/SomaPay e — se o dono confirmar a correspondência —
-   `nome_credor`/`pix_cnpj` (razão social e CNPJ PJ). É do ERP (área Pessoal e DP).
-2. **Ajustar a leitura da obra do cadastro** (`colaboradores.resolver_obra`) para, vindo
-   do ERP, usar `obra_cadastro` (a obra da ficha) e não `obra_codigo` (a do ponto).
-3. **Confirmar com o dono:** (a) "Nome Credor" e "Pix CNPJ" da planilha = razão social e
-   CNPJ PJ do ERP? (b) as situações do ERP (ATIVO, DESLIGADO, AFASTADO…) cobrem o que as
-   fases do Pipefy diziam? (c) todo colaborador ativo tem o **ID Fortes** no ERP?
-4. **Comparar antes de trocar:** uma conferência pessoa a pessoa, campo a campo, entre a
-   cópia e o ERP (só os ativos) — quantas divergências por campo e quem são. É o que diz
-   "está tudo ok" com número, e não por suposição.
-5. **Trocar a fonte**, tela por tela, para o ERP; a cópia da planilha fica só como
-   consulta até o dono mandar apagar.
+- **Fase Atual:** a planilha guardava a fase do card do Pipefy. A folha só procura
+  nela "desligado" e "afastado" (e o texto aparece na coluna "Fase Atual"). No ERP há
+  **Situação** (Ativo, Desligado, Afastado…) e **Etapa** (Inicial, Conferência,
+  Concluído…). Proposta: Situação. A confirmar com o dono.
+
+## Os passos da troca
+
+1. ERP (`para_folha`) passa a mandar o que está "Falta mandar" acima — `recebe_gratificacao`,
+   `razao_social_pj`→`nome_credor`, `cnpj_pj`→`pix_cnpj`, o CNPJ da empresa de registro
+   →`cnpj_admissao`, `valor_mes`→`valor_mensal` e os documentos/endereço. É código do
+   ERP (área Pessoal e DP): dizer na resposta ao mexer.
+2. A "obra do cadastro" da folha passa a vir do `obra_cadastro` (Obra de cadastro), e
+   não do `obra_codigo` (a obra do ponto).
+3. Conferência pessoa a pessoa, campo a campo, cópia × ERP (só os ativos), com o número
+   de diferenças por campo — antes de trocar.
+4. Troca da fonte tela por tela; a cópia da planilha fica só como consulta até o dono
+   mandar apagar.
