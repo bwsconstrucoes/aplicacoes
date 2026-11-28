@@ -802,6 +802,34 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 28/11/2026 — A fila do BaixaBradesco fica VISÍVEL na tela de comprovantes (atravessa áreas: BaixaBradesco e Análise de SPs)
+
+**Metade feita, metade pendente.** O dono, no dia em que religou o disparo
+automático: *"eu reativei, mas por outro lado não tenho onde ver se tem algo na
+fila ou se não tem (…) deveria ter algo na tela de comprovantes. Uma coluna na
+própria linha avisando que tava na fila e ainda ia baixar na planilha (…) ou
+até forçar a baixa (…) pode ter até um indicador de cada comprovante se foi
+baixado no omie e planilha."*
+
+**O problema:** quando o Omie baixa e a planilha não (cota do Google, serviço
+reiniciado no meio, linha não encontrada), o robô registra a pendência e ela se
+resolve sozinha no disparo seguinte. Só que isso era invisível — para saber,
+abrir a planilha e procurar a linha. A pendência parecia perda, e a reação
+natural é refazer à mão, que é o caminho mais perigoso.
+
+**FEITO (BaixaBradesco):** `GET/POST /api/baixabradesco/situacao` responde, por
+SP, se o Omie confirmou, se há pendência na fila, em qual etapa, com que erro,
+quando é a próxima tentativa — e uma frase pronta em português para a coluna.
+E `POST /reprocessar-fila {"sps": [...]}` força aquela SP agora, ignorando o
+relógio e incluindo o que já desistiu. Contrato completo em
+`app/apps/baixabradesco/README.md`.
+
+**PENDENTE (Análise de SPs):** a coluna na tela de comprovantes, o indicador
+por comprovante (Omie / planilha) e o botão de forçar. A tela é de lá; o status
+da planilha ("Pago") já está no banco do próprio Análise de SPs, então de cá ela
+só precisa do que a fila sabe.
+
+
 ### 27/11/2026 — O cadastro de colaboradores passa a vir do ERP; a planilha "Registro de Colaboradores" sai (atravessa Análise de SPs, ponto e ERP)
 
 O dono: *"a planilha já está hoje desatualizada (…) o cadastro é o ERP (…) Se eu já

@@ -10,7 +10,8 @@ from . import bp
 from .core import processar_baixabradesco
 from .conferencia import conferir
 from .diagnostico import executar_diagnostico
-from .fila import reprocessar_fila, resumo_fila, zerar_fila_antiga
+from .fila import (reprocessar_fila, resumo_fila, situacao_por_sp,
+                   zerar_fila_antiga)
 from .fila_tardia import (adiar_payload, limpar_fila_tardia,
                           processar_fila_tardia, resumo_fila_tardia)
 
@@ -101,6 +102,59 @@ def reprocessar_fila_route():
             'error': str(e),
             'traceback': traceback.format_exc(),
         }), 500
+
+@bp.route('/situacao', methods=['GET', 'POST'])
+def situacao_route():
+    """Como está cada SP: o que já foi feito e o que está na fila.
+
+    ⚠️ ESTA ROTA EXISTE PARA A TELA DE COMPROVANTES, no Análise de SPs —
+    pedido do dono em 28/11/2026: *"deveria ter algo na tela de comprovantes.
+    Uma coluna na própria linha avisando que tava na fila e ainda ia baixar na
+    planilha. Assim eu sei que aquela informação vai baixar corretamente ainda,
+    ou até forçar a baixa."*
+
+    `GET /situacao?sps=123,456&secret=...` ou
+    `POST {"sps": ["123","456"]}`.
+
+    Só lê. Para FORÇAR, é `/reprocessar-fila` com `{"sps": [...]}`.
+
+    Cada SP volta com `em_portugues`: uma frase pronta para a coluna da tela.
+    `conferir_omie=0` dispensa a leitura do registro de comprovantes baixados,
+    quando a tela quiser resposta mais rápida.
+    """
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        if request.method == 'POST' and not _authorized(payload):
+            return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
+        if request.method == 'GET':
+            segredo = os.getenv('BAIXABRADESCO_SECRET', '')
+            if segredo and request.args.get('secret') != segredo \
+                    and request.headers.get('X-BaixaBradesco-Secret') != segredo:
+                return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
+
+        sps = payload.get('sps') or []
+        if isinstance(sps, str):
+            sps = sps.split(',')
+        if not sps:
+            sps = [p for p in (request.args.get('sps') or '').split(',') if p.strip()]
+        if payload.get('sp'):
+            sps = list(sps) + [payload['sp']]
+
+        bruto = payload.get('conferir_omie', request.args.get('conferir_omie', '1'))
+        conferir = str(bruto).strip().lower() not in ('0', 'nao', 'não', 'false', 'off')
+
+        if not sps:
+            return jsonify({'ok': False, 'app': 'baixabradesco',
+                            'error': 'Informe as SPs em "sps" (lista ou separadas por vírgula).'}), 400
+        # Teto para a tela não pedir a fila inteira numa chamada só.
+        if len(sps) > 200:
+            return jsonify({'ok': False, 'app': 'baixabradesco',
+                            'error': 'No máximo 200 SPs por consulta.'}), 400
+
+        return jsonify(situacao_por_sp(list(sps), conferir_omie=conferir))
+    except Exception as e:
+        return jsonify({'ok': False, 'app': 'baixabradesco', 'error': str(e)}), 500
+
 
 @bp.route('/fila-resumo', methods=['GET', 'POST'])
 def fila_resumo_route():

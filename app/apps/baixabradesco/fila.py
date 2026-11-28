@@ -178,7 +178,8 @@ def _coluna(faixas: List[Any], indice: int) -> List[str]:
 
 def _candidatos(ws, limite: int, somente_vencidos: bool, aceitos: set,
                 etapas: Optional[set] = None,
-                aviso_minimo: Optional[datetime] = None) -> List[Any]:
+                aviso_minimo: Optional[datetime] = None,
+                sps: Optional[set] = None) -> List[Any]:
     """Varre apenas as colunas de controle (A:L) e devolve as linhas que servem.
 
     O payload de cada linha (coluna N) é um JSON que pode ter alguns kB. Ler a
@@ -197,6 +198,8 @@ def _candidatos(ws, limite: int, somente_vencidos: bool, aceitos: set,
             continue
         if as_string(row[1]).strip().upper() == 'STATUS':
             # Linha de cabeçalho perdida no meio dos dados. Não é pendência.
+            continue
+        if sps is not None and as_string(row[5]).strip() not in sps:
             continue
         etapa_linha = as_string(row[11]).lower()
         if etapas is not None and etapa_linha not in etapas:
@@ -243,7 +246,8 @@ def _buscar_payloads(ws, linhas: List[int]) -> Dict[int, str]:
 def listar_pendentes(gc=None, limite: int = 20, somente_vencidos: bool = True,
                      incluir_falhados: bool = False,
                      etapas: Optional[set] = None,
-                     aviso_minimo: Optional[datetime] = None) -> List[Dict[str, Any]]:
+                     aviso_minimo: Optional[datetime] = None,
+                     sps: Optional[set] = None) -> List[Dict[str, Any]]:
     """Itens da fila a reprocessar.
 
     `etapas`: quando informado, só traz essas etapas. Serve para drenar o que
@@ -253,6 +257,10 @@ def listar_pendentes(gc=None, limite: int = 20, somente_vencidos: bool = True,
     `aviso_minimo`: descarta na ESCOLHA os avisos registrados antes dessa data,
     em vez de trazê-los para serem pulados depois. Sem isso, 1.943 avisos velhos
     na frente da fila fazem com que o aviso de ontem nunca seja alcançado.
+
+    `sps`: quando informado, só traz as pendências DESSAS SPs. É o que permite
+    a tela de comprovantes perguntar "e a minha?" sem puxar a fila inteira, e
+    permite forçar a baixa de um comprovante específico.
 
     `incluir_falhados`: traz também os que esgotaram as cinco tentativas e
     foram marcados FALHOU. Eles NUNCA voltavam sozinhos — ficavam abandonados na
@@ -265,7 +273,7 @@ def listar_pendentes(gc=None, limite: int = 20, somente_vencidos: bool = True,
     if incluir_falhados:
         aceitos.add(STATUS_FALHOU)
     escolhidos = _candidatos(ws, int(limite), bool(somente_vencidos), aceitos,
-                             etapas, aviso_minimo)
+                             etapas, aviso_minimo, sps)
     if not escolhidos:
         return []
     payloads = _buscar_payloads(ws, [idx for idx, _ in escolhidos])
@@ -278,6 +286,144 @@ def listar_pendentes(gc=None, limite: int = 20, somente_vencidos: bool = True,
         d['_row_number'] = idx
         out.append(d)
     return out
+
+
+FAIXA_COM_ERRO = 'A2:M'   # inclui a Mensagem Erro; NUNCA a coluna N (payload)
+
+
+def _frase_da_situacao(pendencias: List[Dict[str, Any]], omie_confirmado: Optional[bool]) -> str:
+    """Uma frase para a tela mostrar na linha do comprovante.
+
+    Escrita para quem está olhando a tela e quer saber uma coisa só: **essa
+    informação ainda vai entrar sozinha, ou alguém precisa fazer algo?**
+    """
+    if not pendencias:
+        if omie_confirmado:
+            return 'Baixado. Nada pendente na fila.'
+        if omie_confirmado is False:
+            return ('Nada na fila. Se a planilha não está como Pago, este '
+                    'comprovante não chegou a ser processado — reenvie.')
+        return 'Nada pendente na fila.'
+
+    falhados = [p for p in pendencias if as_string(p.get('situacao')).upper() == STATUS_FALHOU]
+    etapas = [as_string(p.get('etapa')).lower() for p in pendencias]
+    quando = ''
+    for p in pendencias:
+        if p.get('proxima_tentativa'):
+            quando = as_string(p['proxima_tentativa'])
+            break
+
+    o_que = {
+        'omie': 'a baixa no Omie',
+        'sheets': 'a gravação na planilha',
+        'pipefy': 'mover o cartão',
+        'zapi': 'o aviso no WhatsApp',
+    }
+    faltando = ' e '.join(o_que.get(e, e) for e in dict.fromkeys(etapas))
+
+    if falhados:
+        return (f'DESISTIU de {faltando} depois de várias tentativas. '
+                'Não vai entrar sozinho: force a baixa ou resolva na mão.')
+
+    inicio = 'Baixado no Omie. ' if 'omie' not in etapas else ''
+    fim = f' Próxima tentativa às {quando}.' if quando else ''
+    return f'{inicio}Falta {faltando} — está na fila e entra sozinho.{fim}'
+
+
+def situacao_por_sp(sps: List[str], gc=None, conferir_omie: bool = True) -> Dict[str, Any]:
+    """O estado de cada SP: o que já foi feito e o que está na fila.
+
+    ⚠️ NASCEU DE UM PEDIDO DO DONO, 28/11/2026, e o motivo dele é o ponto:
+
+        *"eu reativei [a fila], mas por outro lado não tenho onde ver se tem
+        algo na fila ou se não tem (…) deveria ter algo na tela de comprovantes.
+        Uma coluna na própria linha avisando que tava na fila e ainda ia baixar
+        na planilha. Assim eu sei que aquela informação vai baixar corretamente
+        ainda, ou até forçar a baixa."*
+
+    Até aqui a fila era invisível: para saber se um comprovante ia se resolver
+    sozinho, era preciso abrir a aba da fila na planilha e procurar a linha. Na
+    prática, ninguém olha — e a pendência fica lá parecendo perda.
+
+    **Esta função é a METADE DESTE MÓDULO.** A tela de comprovantes mora no
+    Análise de SPs, que é outra área; ela chama isto e desenha a coluna. O
+    contrato está no `README.md`.
+
+    Custo: UMA leitura das colunas de controle da fila, mais uma da
+    LogBaixaBradesco quando `conferir_omie` (que é o que diz se o Omie já
+    aceitou). Não lê a SPsBD — o status "Pago" da planilha a tela já tem no
+    banco dela.
+
+    ⚠️ **NUNCA devolve a coluna N da fila.** Ela guarda o pedido original do
+    Make, com a chave e o segredo do Omie e os tokens do Z-API dentro. Uma tela
+    de diagnóstico que devolvesse aquilo estaria publicando as credenciais da
+    empresa.
+    """
+    pedidas = [as_string(x).strip() for x in (sps or []) if as_string(x).strip()]
+    saida: Dict[str, Any] = {'ok': True, 'app': 'baixabradesco', 'sps': {}}
+    if not pedidas:
+        return saida
+
+    procuradas = set(pedidas)
+    gc = gc or get_gc()
+
+    por_sp: Dict[str, List[Dict[str, Any]]] = {sp: [] for sp in pedidas}
+    try:
+        ws = ensure_fila_sheet(gc)
+        valores = ws.get(FAIXA_COM_ERRO) or []
+    except Exception as e:
+        saida['ok'] = False
+        saida['erro'] = str(e)[:200]
+        valores = []
+
+    for idx, row in enumerate(valores, start=2):
+        row = list(row) + [''] * (13 - len(row))
+        situacao = as_string(row[1]).strip().upper()
+        if situacao in ('', 'STATUS', STATUS_CONCLUIDO):
+            continue
+        sp = as_string(row[5]).strip()
+        if sp not in procuradas:
+            continue
+        por_sp[sp].append({
+            'etapa': as_string(row[11]).lower(),
+            'situacao': situacao,
+            'tentativas': as_string(row[2]),
+            'proxima_tentativa': as_string(row[3]),
+            'tipo_falha': as_string(row[4]),
+            'arquivo': as_string(row[7]),
+            'pagina': as_string(row[8]),
+            'erro': as_string(row[12])[:300],
+            'linha_na_fila': idx,
+        })
+
+    confirmados: Optional[set] = None
+    if conferir_omie:
+        try:
+            from .sheets import load_fingerprints_processados
+            registro = load_fingerprints_processados(gc)
+            confirmados = {as_string(v).strip() for v in registro.values() if as_string(v).strip()}
+        except Exception as e:
+            saida['aviso_omie'] = f'não deu para conferir o registro do Omie: {str(e)[:120]}'
+
+    for sp in pedidas:
+        pendencias = por_sp.get(sp) or []
+        omie_confirmado = None if confirmados is None else (sp in confirmados)
+        saida['sps'][sp] = {
+            'sp': sp,
+            'omie_confirmado': omie_confirmado,
+            'na_fila': bool(pendencias),
+            'etapas_pendentes': sorted({p['etapa'] for p in pendencias}),
+            'desistiu': any(p['situacao'] == STATUS_FALHOU for p in pendencias),
+            'pendencias': pendencias,
+            'em_portugues': _frase_da_situacao(pendencias, omie_confirmado),
+        }
+
+    saida['resumo'] = {
+        'consultadas': len(pedidas),
+        'na_fila': sum(1 for v in saida['sps'].values() if v['na_fila']),
+        'desistiu': sum(1 for v in saida['sps'].values() if v['desistiu']),
+    }
+    return saida
 
 
 def _update_row(ws, row_number: int, status: str, tentativas: int, mensagem: str = '', retry_minutes: int = 10):
@@ -944,6 +1090,10 @@ def reprocessar_fila(payload: dict) -> dict:
       {"limite": 10, "somente_vencidos": true, "incluir_falhados": false,
        "pausa_ms": 1200, "reenviar_avisos_antigos": false, "omie": {...}}
 
+    `{"sps": ["123", "456"]}` ou `{"sp": "123"}` reprocessa SÓ aquelas SPs,
+    agora, sem esperar a próxima tentativa e incluindo o que já desistiu. É o
+    "forçar a baixa" da tela de comprovantes.
+
     `limite` alto serve para drenar fila acumulada de uma vez; nesse caso entra
     pausa entre itens (ver `_pausa_padrao`) e a varredura para sozinha se a cota
     do Google começar a recusar, em vez de insistir e derrubar os outros apps.
@@ -951,8 +1101,17 @@ def reprocessar_fila(payload: dict) -> dict:
     gc = get_gc()
     ws = ensure_fila_sheet(gc)
     limite = int(payload.get('limite') or 10)
-    somente_vencidos = payload.get('somente_vencidos', True)
-    incluir_falhados = bool(payload.get('incluir_falhados'))
+    # ⚠️ FORÇAR UM COMPROVANTE É DIFERENTE DE DRENAR A FILA. Quem manda `sps`
+    # está apertando um botão na tela, olhando aquela linha: esperar a "próxima
+    # tentativa" chegar não faz sentido nenhum, e um item que já desistiu
+    # (FALHOU) é justamente o que ele quer destravar. Então, com `sps`, o padrão
+    # inverte — sem relógio e incluindo os que desistiram.
+    sps = {as_string(x).strip() for x in (payload.get('sps') or []) if as_string(x).strip()}
+    sp_unica = as_string(payload.get('sp')).strip()
+    if sp_unica:
+        sps.add(sp_unica)
+    somente_vencidos = payload.get('somente_vencidos', not sps)
+    incluir_falhados = bool(payload.get('incluir_falhados', bool(sps)))
     etapas = _etapas_pedidas(payload)
     pausa = _pausa_padrao(limite, payload)
     # Quem não vai descartar aviso antigo também não deve carregá-lo: senão ele
@@ -964,7 +1123,8 @@ def reprocessar_fila(payload: dict) -> dict:
     pendentes = listar_pendentes(gc, limite=limite,
                                  somente_vencidos=bool(somente_vencidos),
                                  incluir_falhados=incluir_falhados,
-                                 etapas=etapas, aviso_minimo=aviso_minimo)
+                                 etapas=etapas, aviso_minimo=aviso_minimo,
+                                 sps=sps or None)
     resultados = []
     inicio = datetime.now()
     cota_seguidas = 0

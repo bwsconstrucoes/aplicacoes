@@ -92,6 +92,65 @@ baixava e ninguém ficava sabendo.
 As duas aparecem no relatório do Telegram em linha resumida (`N página(s) de
 rodapé ou continuação`), e na resposta em `paginas_sem_pagamento`.
 
+### Ver a fila na linha do comprovante — contrato para a tela (28/11/2026)
+
+Pedido do dono: *"deveria ter algo relacionado à essa fila na tela de
+comprovantes. Uma coluna na própria linha avisando que tava na fila e ainda ia
+baixar na planilha. Assim eu sei que aquela informação vai baixar corretamente
+ainda, ou até forçar a baixa."*
+
+**A tela mora no Análise de SPs**, que é outra área. O que mora aqui é a
+resposta. Quem for montar a coluna usa estas duas chamadas:
+
+**1. Consultar (só lê):**
+
+```
+GET  /api/baixabradesco/situacao?sps=123,456&secret=...
+POST /api/baixabradesco/situacao   {"sps": ["123","456"], "secret": "..."}
+```
+
+No máximo 200 SPs por chamada. `conferir_omie=0` dispensa a leitura do registro
+de comprovantes baixados (uma leitura a menos, e aí `omie_confirmado` vem
+`null`).
+
+Resposta, por SP:
+
+| Campo | O que é |
+|---|---|
+| `omie_confirmado` | `true` se o Omie já aceitou a baixa (vem da `LogBaixaBradesco`); `null` quando não foi conferido |
+| `na_fila` | tem pendência esperando reprocessamento |
+| `etapas_pendentes` | `omie`, `sheets`, `pipefy`, `zapi` |
+| `desistiu` | esgotou as tentativas (`FALHOU`): **não entra sozinho** |
+| `pendencias` | uma por linha da fila: etapa, situação, tentativas, próxima tentativa, tipo de falha, arquivo, página, erro |
+| `em_portugues` | **frase pronta para a coluna da tela** |
+
+A frase já diz a coisa certa em cada caso — "Baixado no Omie. Falta a gravação
+na planilha — está na fila e entra sozinho. Próxima tentativa às 14:10." ou
+"DESISTIU de … Não vai entrar sozinho: force a baixa ou resolva na mão."
+
+**2. Forçar a baixa de um comprovante:**
+
+```
+POST /api/baixabradesco/reprocessar-fila   {"sps": ["123"]}
+```
+
+Com `sps` (ou `sp`), o padrão inverte de propósito: **ignora a próxima
+tentativa e inclui o que já desistiu** — é um botão apertado por alguém olhando
+aquela linha. Sem `sps`, nada muda: a drenagem automática continua respeitando
+o relógio e não insiste no que falhou cinco vezes.
+
+Repetir é seguro: a consulta ao Omie devolve "já pago" e nada é pago duas vezes.
+
+**O que a tela já tem e NÃO precisa pedir aqui:** se a planilha está "Pago" —
+isso está no banco do próprio Análise de SPs. Esta rota responde o que só a fila
+sabe.
+
+**Custo:** uma leitura das colunas de controle da fila, mais uma da
+`LogBaixaBradesco` quando `conferir_omie`. Não lê a SPsBD.
+
+⚠️ **A resposta nunca traz a coluna N da fila**, que guarda o pedido original do
+Make — com a chave e o segredo do Omie e os tokens do Z-API dentro.
+
 ### A execução é por fase, não por comprovante
 
 Também de 17/11/2026, e pelo mesmo motivo (tempo): cada etapa trata o lote
