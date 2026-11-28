@@ -802,6 +802,34 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 28/11/2026 — A `main` ficou TRÊS publicações vermelha sem ninguém ver, e agora dá para rodar os testes de banco no chat (atravessa áreas)
+
+**O que aconteceu:** as rodadas do GitHub em `1982f5e0` (27/11 18h39, Análise de
+SPs), `8d8ec64e` (27/11 19h37) e `f64262a4` (27/11 23h52) falharam, de chats
+diferentes, e nenhum percebeu. O mecanismo é sempre o mesmo: o chat roda a
+suíte, os testes marcados `banco` são **pulados** por falta de
+`ERP_TEST_DATABASE_URL`, tudo fica verde, ele publica e encerra. A rodada do
+GitHub — que sobe Postgres de verdade — só responde dez minutos depois.
+
+E o estrago se acumula: **cada publicação nova herda o vermelho da anterior**,
+então a cor deixa de dizer qualquer coisa sobre a última mudança.
+
+**As duas falhas de verdade** (as outras eram bibliotecas faltando no ambiente
+do chat) estão em `tests/test_ponto_registro_banco.py` e vêm da mudança de
+27/11 que fez o cadastro de colaboradores vir do ERP em vez da planilha: a busca
+por quem não está no cadastro passou a devolver um motivo novo, e os dois testes
+ainda esperam o texto antigo ("ESC RUSSAS", lista vazia). **Área do Ponto /
+Análise de SPs — não consertado aqui, de propósito.**
+
+**O que fica, e é a parte reaproveitável:** a máquina do chat não tem Docker,
+mas **tem o Postgres 16 instalado** — dá para subir um banco descartável em
+três comandos e rodar exatamente a suíte do GitHub. O passo a passo entrou no
+`CLAUDE.md`, na seção "Antes de commitar", junto com duas armadilhas na leitura
+do resultado (com `-rs` a falha não sai como linha "FAILED"; e o registro do
+GitHub é inútil para isso, porque o despejo do log do Postgres no fim enterra o
+resultado dos testes).
+
+
 ### 28/11/2026 — A fila do BaixaBradesco fica VISÍVEL na tela de comprovantes (atravessa áreas: BaixaBradesco e Análise de SPs)
 
 **Metade feita, metade pendente.** O dono, no dia em que religou o disparo

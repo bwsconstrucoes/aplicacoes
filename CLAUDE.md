@@ -540,6 +540,47 @@ pulados e a suíte segue. O GitHub Actions (`.github/workflows/testes.yml`) sobe
 esse banco sozinho a cada envio; no PC, `docker-compose.teste.yml` faz o mesmo.
 Regra de escopo nova ganha um caso ali, não só no dublê.
 
+#### ⚠️ NO CHAT DA NUVEM DÁ PARA RODAR ESSES TESTES — descoberto em 28/11/2026
+
+E isto não é detalhe de conforto: **é o buraco por onde passaram três
+publicações vermelhas seguidas na `main`** (27/11 18h39, 27/11 19h37 e 27/11
+23h52, de chats diferentes). Cada um rodou a suíte, viu verde, publicou — e os
+testes de banco, que ficam **PULADOS** sem a variável, só falaram no GitHub dez
+minutos depois, quando a conversa já tinha acabado. Como cada publicação herda
+o vermelho da anterior, ninguém consegue mais distinguir o que quebrou agora.
+
+A máquina do chat **não tem Docker**, então o `docker-compose.teste.yml` não
+serve. Mas o **Postgres 16 está instalado**, e dá para subir um banco
+descartável direto:
+
+```bash
+D=/tmp/pgteste && rm -rf $D && mkdir -p $D && chown postgres:postgres $D
+su postgres -c "/usr/lib/postgresql/16/bin/initdb -D $D -U erp --auth=trust --no-locale"
+su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D $D -l /tmp/pg.log \
+  -o '-p 5432 -c fsync=off -c synchronous_commit=off -c listen_addresses=localhost' start"
+su postgres -c "/usr/lib/postgresql/16/bin/createdb -p 5432 -U erp erp_teste"
+ERP_TEST_DATABASE_URL=postgresql://erp:erp@localhost:5432/erp_teste \
+  python -m pytest -rs -n auto --dist loadfile
+```
+
+**Antes de juntar na `main`, rode ASSIM** — é a única forma de ver aqui o mesmo
+que o GitHub vê.
+
+Dois detalhes que custaram tempo quando isto foi descoberto:
+
+1. **Com `-rs`, falha NÃO aparece como linha "FAILED"**. O `-rs` manda reportar
+   os PULADOS; as falhas saem como bloco de erro na seção `FAILURES`. Procure
+   por `^_____` ou pela própria seção, não por "FAILED".
+2. **O registro do GitHub não serve para achar a falha.** Ao encerrar a rodada,
+   ele despeja o log inteiro do Postgres — mais de cinco mil linhas, que é o
+   limite do que a ferramenta devolve. O resultado dos testes fica enterrado
+   debaixo disso e **não dá para alcançar**. Rodar aqui é o caminho.
+3. **Três bibliotecas faltam nesta máquina** e não faltam no GitHub:
+   `pydantic` (puxada pelo `openai`), `s3transfer` (pelo `boto3`) e
+   `erpbrasil.transmissao`. Dão 7 falhas que **não são de código**. Instale com
+   `python -m pip install --ignore-installed pydantic s3transfer` ou desconte
+   essas na leitura — mas desconte com o nome na mão, não por suposição.
+
 ### 2. A aplicação sobe?
 
 `python app/main.py` (porta 5000 por padrão). Uma importação quebrada em
